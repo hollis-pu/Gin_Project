@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>模板的语法</title>
+</head>
+<body>
+<hr>
+<p>所有传入的信息：{{.}}</p>
+<p>user：</p>
+<p>姓名：{{.user.Name}}</p>
+<p>性别：{{.user.Gender}}</p>
+<p>年龄：{{.user.Age}}</p>
+
+{{/* 模板里面的注释信息 */}}
+
+<p>book：</p>
+书名：{{.book.name}}
+<p>作者：{{.book.author}}</p>
+<p>价格：{{.book.price}}</p>
+<hr>
+
+模板中条件判断的使用：
+{{ $var1:=100 }}   {{/* 在模板中定义变量 */}}
+{{ $age:=.user.Age }}
+{{ if $var1 }}  {{/* 只要$var1有值，则条件成立 */}}
+var1：{{ $var1 }}
+{{ else }}
+没有var1变量
+{{ end }}
+<hr>
+模板中内置函数的使用：
+{{ if lt $age 18}}  {{/* lt：小于 eq：等于 ... */}}
+    未成年！
+{{ else }}
+    已成年！
+{{ end }}
+<hr>
+
+使用range变量元素：
+{{ range $index,$hobby := .hobby }}
+    <p>爱好{{ $index }}：{{ $hobby }}</p>
+{{ else }}
+    hobby内容为空！
+{{ end }}
+<hr>
+
+</body>
+</html>
