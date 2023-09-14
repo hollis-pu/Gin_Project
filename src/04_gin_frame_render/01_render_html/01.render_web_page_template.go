@@ -15,7 +15,7 @@ import (
 */
 func main() {
 	r := gin.Default()
-	r.Static("/static", "./static") // 加载静态资源
+	r.Static("static", "./statics") // 加载静态资源。这里是指定静态文件的路径映射。模板文件中所有以static开头的静态文件都到当前目录下的statics目录去找。
 	r.LoadHTMLGlob("*.html")        // 加载所有的html文件
 	//r.LoadHTMLFiles("index.html")
 
