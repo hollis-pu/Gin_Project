@@ -20,7 +20,7 @@ import (
 var DB *gorm.DB
 var mysqlLogger logger.Interface
 
-type Person struct {
+type Person struct { // 注意：转成数据库表的名称为people而不是persons
 	ID     uint    `gorm:"size:10" json:"id"`
 	Name   string  `gorm:"size:10;not null:true" json:"name"`
 	Age    int     `gorm:"size:3" json:"age,omitempty"`
