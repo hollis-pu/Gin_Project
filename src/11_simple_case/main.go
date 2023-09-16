@@ -10,9 +10,10 @@ import (
 
 /**
 * Description:
+	一个代办清单的简单案例
 * @Author Hollis
 * @Create 2023/9/16 16:23
- */
+*/
 
 var DB *gorm.DB
 
