@@ -18,12 +18,13 @@ import (
 func main() {
 	viper.SetDefault("version", "v0.0.0") // 设置默认值
 
-	viper.SetConfigFile("./src/15_viper/config.yaml") // 指定配置文件路径
+	viper.SetConfigFile("./src/15_viper/config.yaml") // 指定配置文件路径（注意：这里的相对路径是指相对于可执行文件所在目录的相对路径）
 	// 也可以采用下面的方式：
-	// viper.SetConfigName("config")         // 配置文件名称(无扩展名)
-	// viper.SetConfigType("yaml")           // 如果配置文件的名称中没有扩展名，则需要配置此项
+	// viper.SetConfigName("config")         // 配置文件名称(无扩展名)（当存在多个同名但不同类型的配置文件时，可能导致异常）
 	// viper.AddConfigPath("./")             // 查找配置文件所在的路径
 	// viper.AddConfigPath("./src/15_viper") // 多次调用以添加多个搜索路径
+
+	// viper.SetConfigType("yaml")           // 基本上是配合远程配置中心使用的，告诉viper当前的数据使用的是什么格式去解析
 
 	err := viper.ReadInConfig() // 查找并读取配置文件
 	if err != nil {
