@@ -1,5 +1,7 @@
 # Gin框架学习笔记
 
+[toc]
+
 2023.09.13
 
 学习教程：[七米-基于gin框架和gorm的web开发实战](https://www.bilibili.com/video/BV1gJ411p7xC)
@@ -1145,6 +1147,14 @@ db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 })
 ```
 
+> 也可以指定需要绑定的表的名称
+>
+> ```go
+> func (Student) TableName() string { // 指定表名
+>   return "student"
+> }
+> ```
+
 #### 显示日志
 
 gorm的默认日志是只打印错误和慢SQL
@@ -1335,7 +1345,7 @@ for i := 0; i < 100; i++ {
     Email:  &email,
   })
 }
-DB.Create(&studentList)
+DB.Create(&studentList)  // 使用切片进行批量插入
 ```
 
 #### 2.查询操作
@@ -1557,7 +1567,7 @@ DB.Model(&Student{}).Where("age = ?", 21).Select("gender", "email").Updates(Stud
 // UPDATE `students` SET `gender`=false,`email`='xxx1@qq.com' WHERE age = 21
 ```
 
-如果不想多写几行代码，则推荐使用map
+如果不想多写几行代码，则推荐使用map（这样也可以更新零值）
 
 ```go
 DB.Model(&Student{}).Where("age = ?", 21).Updates(map[string]any{
@@ -2161,3 +2171,882 @@ DB.Model(&user).Association("Articles").Delete(&user.Articles)
 ```
 
 学习到第18集。（https://www.bilibili.com/video/BV1xg411t7RZ?p=18）
+
+#### 2.一对一
+
+2023.09.16
+
+一对一关系比较少，一般用于表的扩展
+
+例如一张用户表，有很多字段
+
+那么就可以把它拆分为两张表，常用的字段放主表，不常用的字段放详情表
+
+##### 1.表结构搭建
+
+```go
+type User struct {
+  ID       uint
+  Name     string
+  Age      int
+  Gender   bool
+  UserInfo UserInfo // 通过UserInfo可以拿到用户详情信息
+}
+
+type UserInfo struct {
+  UserID uint // 外键
+  ID     uint
+  Addr   string
+  Like   string
+}
+```
+
+##### 2.添加记录
+
+添加用户，自动添加用户详情
+
+```go
+DB.Create(&User{
+  Name:   "枫枫",
+  Age:    21,
+  Gender: true,
+  UserInfo: UserInfo{
+    Addr: "湖南省",
+    Like: "写代码",
+  },
+})
+```
+
+添加用户详情，关联已有用户
+
+这个场景特别适合网站的注册，以及后续信息完善
+
+刚开始注册的时候，只需要填写很基本的信息，这就是添加主表的一条记录
+
+注册进去之后，去个人中心，添加头像，修改地址...
+
+这就是添加附表
+
+```go
+DB.Create(&UserInfo{
+  UserID: 2,
+  Addr:   "南京市",
+  Like:   "吃饭",
+})
+```
+
+当然，也可以直接把用户对象传递进来
+
+我们需要改一下表结构
+
+```go
+type User struct {
+  ID       uint
+  Name     string
+  Age      int
+  Gender   bool
+  UserInfo UserInfo // 通过UserInfo可以拿到用户详情信息
+}
+
+type UserInfo struct {
+  User *User  // 要改成指针，不然就嵌套引用了
+  UserID uint // 外键
+  ID     uint
+  Addr   string
+  Like   string
+}
+```
+
+不限于重新迁移，直接添加即可
+
+```go
+var user User
+DB.Take(&user, 2)
+DB.Create(&UserInfo{
+  User: &user,
+  Addr: "南京市",
+  Like: "吃饭",
+})
+```
+
+##### 3.查询
+
+一般是通过主表查副表
+
+```go
+var user User
+DB.Preload("UserInfo").Take(&user)
+fmt.Println(user)
+```
+
+#### 3.多对多
+
+多对多关系，需要用第三张表存储两张表的关系
+
+##### 1.表结构搭建
+
+```go
+type Tag struct {
+  ID       uint
+  Name     string
+  Articles []Article `gorm:"many2many:article_tags;"` // 用于反向引用
+}
+
+type Article struct {
+  ID    uint
+  Title string
+  Tags  []Tag `gorm:"many2many:article_tags;"`
+}
+```
+
+##### 2.多对多添加
+
+添加文章，并创建标签
+
+```go
+DB.Create(&Article{
+  Title: "python基础课程",
+  Tags: []Tag{
+    {Name: "python"},
+    {Name: "基础课程"},
+  },
+})
+```
+
+添加文章，选择标签
+
+```go
+var tags []Tag
+DB.Find(&tags, "name = ?", "基础课程")
+DB.Create(&Article{
+  Title: "golang基础",
+  Tags:  tags,
+})
+```
+
+##### 3.多对多查询
+
+查询文章，显示文章的标签列表
+
+```go
+var article Article
+DB.Preload("Tags").Take(&article, 1)
+fmt.Println(article)
+```
+
+查询标签，显示文章列表
+
+```go
+var tag Tag
+DB.Preload("Articles").Take(&tag, 2)
+fmt.Println(tag)
+```
+
+##### 4.多对多更新
+
+移除文章的标签
+
+```go
+var article Article
+DB.Preload("Tags").Take(&article, 1)
+DB.Model(&article).Association("Tags").Delete(article.Tags)
+fmt.Println(article)
+```
+
+更新文章的标签
+
+```go
+var article Article
+var tags []Tag
+DB.Find(&tags, []int{2, 6, 7})
+
+DB.Preload("Tags").Take(&article, 2)
+DB.Model(&article).Association("Tags").Replace(tags)
+fmt.Println(article)
+```
+
+##### 5.自定义连接表
+
+默认的连接表，只有双方的主键id，展示不了更多信息了
+
+这是官方的例子，我修改了一下
+
+```go
+type Article struct {
+  ID    uint
+  Title string
+  Tags  []Tag `gorm:"many2many:article_tags"`
+}
+
+type Tag struct {
+  ID   uint
+  Name string
+}
+
+type ArticleTag struct {
+  ArticleID uint `gorm:"primaryKey"`
+  TagID     uint `gorm:"primaryKey"`
+  CreatedAt time.Time
+}
+
+```
+
+##### 6.生成表结构
+
+```go
+// 设置Article的Tags表为ArticleTag
+DB.SetupJoinTable(&Article{}, "Tags", &ArticleTag{})
+// 如果tag要反向应用Article，那么也得加上
+// DB.SetupJoinTable(&Tag{}, "Articles", &ArticleTag{})
+err := DB.AutoMigrate(&Article{}, &Tag{}, &ArticleTag{})
+fmt.Println(err)
+```
+
+##### 7.操作案例
+
+举一些简单的例子
+
+1. 添加文章并添加标签，并自动关联
+2. 添加文章，关联已有标签
+3. 给已有文章关联标签
+4. 替换已有文章的标签
+5. 添加文章并添加标签，并自动关联
+
+```go
+DB.SetupJoinTable(&Article{}, "Tags", &ArticleTag{})  // 要设置这个，才能走到我们自定义的连接表
+DB.Create(&Article{
+  Title: "flask零基础入门",
+  Tags: []Tag{
+    {Name: "python"},
+    {Name: "后端"}, 
+    {Name: "web"},
+  },
+})
+// CreatedAt time.Time 由于我们设置的是CreatedAt，gorm会自动填充当前时间，
+// 如果是其他的字段，需要使用到ArticleTag 的添加钩子 BeforeCreate
+```
+
+**1.添加文章，关联已有标签**
+
+```go
+DB.SetupJoinTable(&Article{}, "Tags", &ArticleTag{})
+var tags []Tag
+DB.Find(&tags, "name in ?", []string{"python", "web"})
+DB.Create(&Article{
+  Title: "flask请求对象",
+  Tags:  tags,
+})
+```
+
+**2.给已有文章关联标签**
+
+```go
+DB.SetupJoinTable(&Article{}, "Tags", &ArticleTag{})
+article := Article{
+  Title: "django基础",
+}
+DB.Create(&article)
+var at Article
+var tags []Tag
+DB.Find(&tags, "name in ?", []string{"python", "web"})
+DB.Take(&at, article.ID).Association("Tags").Append(tags)
+```
+
+**3.替换已有文章的标签**
+
+```go
+var article Article
+var tags []Tag
+DB.Find(&tags, "name in ?", []string{"后端"})
+DB.Take(&article, "title = ?", "django基础")
+DB.Model(&article).Association("Tags").Replace(tags)
+```
+
+**4.查询文章列表，显示标签**
+
+```go
+var articles []Article
+DB.Preload("Tags").Find(&articles)
+fmt.Println(articles)
+```
+
+**5.SetupJoinTable**
+
+添加和更新的时候得用这个
+
+这样才能走自定义的连接表，以及走它的钩子函数
+
+查询则不需要这个
+
+**6.自定义连接表主键**
+
+这个功能还是很有用的，例如你的文章表 可能叫ArticleModel，你的标签表可能叫TagModel
+
+那么按照gorm默认的主键名，那就分别是ArticleModelID，TagModelID，太长了，根本就不实用
+
+这个地方，官网给的例子看着也比较迷，不过我已经跑通了
+
+主要是要修改这两项
+
+joinForeignKey 连接的主键id
+
+JoinReferences 关联的主键id
+
+```go
+type ArticleModel struct {
+  ID    uint
+  Title string
+  Tags  []TagModel `gorm:"many2many:article_tags;joinForeignKey:ArticleID;JoinReferences:TagID"`
+}
+
+type TagModel struct {
+  ID       uint
+  Name     string
+  Articles []ArticleModel `gorm:"many2many:article_tags;joinForeignKey:TagID;JoinReferences:ArticleID"`
+}
+
+type ArticleTagModel struct {
+  ArticleID uint `gorm:"primaryKey"` // article_id
+  TagID     uint `gorm:"primaryKey"` // tag_id
+  CreatedAt time.Time
+}
+```
+
+**7.生成表结构**
+
+```go
+DB.SetupJoinTable(&ArticleModel{}, "Tags", &ArticleTagModel{})
+DB.SetupJoinTable(&TagModel{}, "Articles", &ArticleTagModel{})
+err := DB.AutoMigrate(&ArticleModel{}, &TagModel{}, &ArticleTagModel{})
+fmt.Println(err)
+```
+
+添加，更新，查询操作和上面的都是一样
+
+**8.操作连接表**
+
+如果通过一张表去操作连接表，这样会比较麻烦
+
+比如查询某篇文章关联了哪些标签
+
+或者是举个更通用的例子，用户和文章，某个用户在什么时候收藏了哪篇文章
+
+无论是通过用户关联文章，还是文章关联用户都不太好查
+
+最简单的就是直接查连接表
+
+```go
+type UserModel struct {
+  ID       uint
+  Name     string
+  Collects []ArticleModel `gorm:"many2many:user_collect_models;joinForeignKey:UserID;JoinReferences:ArticleID"`
+}
+
+type ArticleModel struct {
+  ID    uint
+  Title string
+  // 这里也可以反向引用，根据文章查哪些用户收藏了
+}
+
+// UserCollectModel 用户收藏文章表
+type UserCollectModel struct {
+  UserID    uint `gorm:"primaryKey"` // article_id
+  ArticleID uint `gorm:"primaryKey"` // tag_id
+  CreatedAt time.Time
+}
+
+func main() {
+  DB.SetupJoinTable(&UserModel{}, "Collects", &UserCollectModel{})
+  err := DB.AutoMigrate(&UserModel{}, &ArticleModel{}, &UserCollectModel{})
+  fmt.Println(err)
+}
+```
+
+常用的操作就是根据用户查收藏的文章列表
+
+```go
+var user UserModel
+DB.Preload("Collects").Take(&user, "name = ?", "枫枫")
+fmt.Println(user)
+```
+
+但是这样不太好做分页，并且也拿不到收藏文章的时间
+
+```go
+var collects []UserCollectModel
+DB.Find(&collects, "user_id = ?", 2)
+fmt.Println(collects)
+```
+
+这样虽然可以查到用户id，文章id，收藏的时间，但是搜索只能根据用户id搜，返回也拿不到用户名，文章标题等
+
+我们需要改一下表结构，不需要重新迁移，加一些字段
+
+```go
+type UserModel struct {
+  ID       uint
+  Name     string
+  Collects []ArticleModel `gorm:"many2many:user_collect_models;joinForeignKey:UserID;JoinReferences:ArticleID"`
+}
+
+type ArticleModel struct {
+  ID    uint
+  Title string
+}
+
+// UserCollectModel 用户收藏文章表
+type UserCollectModel struct {
+  UserID       uint         `gorm:"primaryKey"` // article_id
+  UserModel    UserModel    `gorm:"foreignKey:UserID"`
+  ArticleID    uint         `gorm:"primaryKey"` // tag_id
+  ArticleModel ArticleModel `gorm:"foreignKey:ArticleID"`
+  CreatedAt    time.Time
+}
+```
+
+**9.查询**
+
+```go
+var collects []UserCollectModel
+
+var user UserModel
+DB.Take(&user, "name = ?", "枫枫")
+// 这里用map的原因是如果没查到，那就会查0值，如果是struct，则会忽略零值，全部查询
+DB.Debug().Preload("UserModel").Preload("ArticleModel").Where(map[string]any{"user_id": user.ID}).Find(&collects)
+
+for _, collect := range collects {
+  fmt.Println(collect)
+}
+```
+
+### 10.自定义数据类型
+
+在Go语言中使用Gorm框架自定义数据类型时，你可以创建一个自定义类型并实现Gorm的`Scanner`和`Valuer`接口，以便将其映射到数据库字段，包括JSON类型字段。下面是一个示例，演示如何自定义数据类型并将其映射到JSON字段。
+
+#### 1.Json
+
+假设你要创建一个自定义数据类型`MyJSON`，它表示一个可以存储为JSON的数据结构，并将其映射到数据库中的JSON字段。
+
+1. 创建自定义数据类型：
+
+```go
+package models
+
+import (
+    "database/sql/driver"
+    "encoding/json"
+    "errors"
+)
+
+// MyJSON 自定义JSON类型
+type MyJSON map[string]interface{}
+
+// 实现Valuer接口，将MyJSON类型转换为数据库字段值
+func (mj MyJSON) Value() (driver.Value, error) {
+    return json.Marshal(mj)
+}
+
+// 实现Scanner接口，从数据库字段值扫描到MyJSON类型
+func (mj *MyJSON) Scan(value interface{}) error {
+    if value == nil {
+        *mj = nil
+        return nil
+    }
+
+    // 将数据库中的JSON字符串解析为MyJSON类型
+    var jsonData []byte
+    switch val := value.(type) {
+    case []byte:
+        jsonData = val
+    case string:
+        jsonData = []byte(val)
+    default:
+        return errors.New("Failed to scan MyJSON from database")
+    }
+
+    return json.Unmarshal(jsonData, mj)
+}
+```
+
+2. 在模型中使用自定义数据类型：
+
+```go
+package models
+
+import "github.com/jinzhu/gorm"
+
+type Item struct {
+    ID   uint
+    Data MyJSON // 使用自定义JSON数据类型
+}
+```
+
+3. 在数据库迁移中使用自定义数据类型：
+
+```go
+package main
+
+import (
+    "github.com/jinzhu/gorm"
+    _ "github.com/jinzhu/gorm/dialects/sqlite"
+    "your_project/models"
+)
+
+func main() {
+    db, err := gorm.Open("sqlite3", "test.db")
+    if err != nil {
+        panic("Failed to connect database")
+    }
+    defer db.Close()
+
+    // 自动迁移数据库结构
+    db.AutoMigrate(&models.Item{})
+}
+```
+
+现在，你已经成功地创建了一个自定义数据类型`MyJSON`，并在Gorm模型中使用它。这使你能够将包含JSON数据的结构存储为数据库中的JSON字段，并在需要时自动转换为`MyJSON`类型。你可以在模型中使用`MyJSON`字段来存储和检索JSON数据。
+
+#### 2.Enum
+
+```go
+type Status int
+
+const (
+    Running Status = iota // 使用iota来递增常量
+    Except
+    OffLine
+)
+
+type Host struct {
+    IP     string `json:"ip"`
+    Status Status `json:"status"`
+}
+
+// MarshalJSON 实现MarshalJSON()方法，会在json.Marshal()时被自动调用
+func (status Status) MarshalJSON() ([]byte, error) { // 作Status数字和字符串之间的映射
+    var str string
+    switch status {
+    case Running:
+       str = "Running"
+    case Except:
+       str = "Except"
+    case OffLine:
+       str = "OffLine"
+    }
+    return json.Marshal(str)
+}
+
+func main() {
+    DB := DB.Session(&gorm.Session{Logger: mysqlLogger})
+    _ = DB.AutoMigrate(&Host{}) // 自动迁移数据库结构
+
+    // 添加数据
+    DB.Create(&Host{
+       IP:     "192.168.12.56",
+       Status: Running,
+    })
+    DB.Create(&Host{
+       IP:     "192.168.12.88",
+       Status: OffLine,
+    })
+
+    // 查询数据
+    var host Host
+    DB.Take(&host, "ip = ?", "192.168.12.56")
+    fmt.Println(host) // {192.168.12.56 1}
+    // 这样打印出来的值是数据库中实际存放的值，如果我们想要给前端返回Status值而不是数字，就需要实现MarshalJSON()方法。
+    // 在通过json.Marshal()对host进行序列化时，会自动调用MarshalJSON()函数，将数字转换为其对应的字符串。
+
+    // 序列化为JSON格式的字符串
+    data, _ := json.Marshal(host) // 自动调用MarshalJSON()函数
+    fmt.Println(string(data))     // {"ip":"192.168.12.56","status":"Running"}
+}
+```
+
+MarshalJSON 方法：
+
+> 在Gorm中，有时你可能需要自定义如何将数据库模型（model）的字段值转换为JSON格式。为了实现这个目标，你可以在Gorm的模型上定义一个 `MarshalJSON` 方法，该方法会在将模型序列化为JSON时被自动调用。
+
+### 11.事务
+
+事务就是用户定义的一系列数据库操作，这些操作可以视为一个完成的逻辑处理工作单元，要么全部执行，要么全部不执行，是不可分割的工作单元。
+
+很形象的一个例子，张三给李四转账100元，在程序里面，张三的余额就要-100，李四的余额就要+100 整个事件是一个整体，哪一步错了，整个事件都是失败的
+
+gorm事务默认是开启的。为了确保数据一致性，GORM 会在事务里执行写入操作（创建、更新、删除）。
+
+如果没有这方面的要求，您可以在初始化时禁用它，这将获得大约 30%+ 性能提升。
+
+一般不推荐禁用
+
+```go
+// 全局禁用
+db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{
+  SkipDefaultTransaction: true,
+})
+
+```
+
+本节课表结构
+
+```go
+type User struct {
+  ID    uint   `json:"id"`
+  Name  string `json:"name"`
+  Money int    `json:"money"`
+}
+
+// InnoDB引擎才支持事务，MyISAM不支持事务
+// DB.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(&User{})
+
+```
+
+##### 1.普通事务
+
+以张三给李四转账为例，不使用事务的后果
+
+```go
+var zhangsan, lisi User
+DB.Take(&zhangsan, "name = ?", "张三")
+DB.Take(&lisi, "name = ?", "李四")
+// 张三给李四转账100元
+// 先给张三-100
+zhangsan.Money -= 100
+DB.Model(&zhangsan).Update("money", zhangsan.Money)
+// 模拟失败的情况
+
+// 再给李四+100
+lisi.Money += 100
+DB.Model(&lisi).Update("money", lisi.Money)
+```
+
+在失败的情况下，要么张三白白损失了100，要么李四凭空拿到100元
+
+这显然是不合逻辑的，并且不合法的
+
+那么，使用事务是怎样的
+
+```go
+var zhangsan, lisi User
+DB.Take(&zhangsan, "name = ?", "张三")
+DB.Take(&lisi, "name = ?", "李四")
+// 张三给李四转账100元
+DB.Transaction(func(tx *gorm.DB) error {
+
+  // 先给张三-100
+  zhangsan.Money -= 100
+  err := tx.Model(&zhangsan).Update("money", zhangsan.Money).Error
+  if err != nil {
+    fmt.Println(err)
+    return err
+  }
+
+  // 再给李四+100
+  lisi.Money += 100
+  err = tx.Model(&lisi).Update("money", lisi.Money).Error
+  if err != nil {
+    fmt.Println(err)
+    return err
+  }
+  // 提交事务
+  return nil
+})
+```
+
+使用事务之后，他们就是一体，一起成功，一起失败
+
+**db.Transaction 方法**：
+
+> 签名：`func (db *DB) Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) error`
+>
+> `fc func(tx *gorm.DB) error`: 这是一个接受 `*gorm.DB` 参数并返回 `error` 的函数，用于定义你要在事务中执行的操作。在这个函数内部，你可以执行数据库的查询、插入、更新和删除操作，如果发生错误，应该返回一个非空的错误值，以便事务能够回滚。
+>
+> `opts ...*sql.TxOptions`: 这是一个可选参数，用于指定事务的选项，例如事务的隔离级别、只读事务等。`sql.TxOptions` 是一个结构体，你可以在其中设置事务的属性。默认情况下，如果不提供这个参数，Gorm会使用数据库的默认选项。
+>
+> 如果在事务中的任何操作中发生错误，事务将自动回滚，并且错误将被传递给调用方。在这个方法内部，如果发生错误，应该返回一个非空的错误值，以便事务能够回滚。返回`nil`表示事务操作成功。
+
+##### 2.手动事务
+
+```go
+// 开始事务
+tx := db.Begin()
+
+// 在事务中执行一些 db 操作（从这里开始，您应该使用 'tx' 而不是 'db'）
+tx.Create(...)
+
+// ...
+
+// 遇到错误时回滚事务
+tx.Rollback()
+
+// 否则，提交事务
+tx.Commit()
+```
+
+刚才的代码也可以这样实现
+
+```go
+var zhangsan, lisi User
+DB.Take(&zhangsan, "name = ?", "张三")
+DB.Take(&lisi, "name = ?", "李四")
+
+// 张三给李四转账100元
+tx := DB.Begin()
+
+// 先给张三-100
+zhangsan.Money -= 100
+err := tx.Model(&zhangsan).Update("money", zhangsan.Money).Error
+if err != nil {
+  tx.Rollback()
+}
+
+// 再给李四+100
+lisi.Money += 100
+err = tx.Model(&lisi).Update("money", lisi.Money).Error
+if err != nil {
+  tx.Rollback()
+}
+// 提交事务
+tx.Commit()
+```
+
+已学完：[枫枫知道-golang最简单的gorm教程](https://www.bilibili.com/video/BV1xg411t7RZ)
+
+已学完：[【最新Go Web开发教程】基于gin框架和gorm的web开发实战 (七米出品)](https://www.bilibili.com/video/BV1gJ411p7xC)
+
+目前学习内容：[七米-Go Web开发进阶实战（gin框架）（共23小时）](https://study.163.com/course/introduction.htm?courseId=1210171207)
+
+## Gin框架源码
+
+可以参考的教程：[小徐先生1212-gin框架底层技术原理剖析](https://www.bilibili.com/video/BV1zm4y177mb)
+
+### 前缀树
+
+```go
+// ServeHTTP conforms to the http.Handler interface.
+func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+    c := engine.pool.Get().(*Context)
+    c.writermem.reset(w)  // 取出来之后再做初始化
+    c.Request = req
+    c.reset()
+
+    engine.handleHTTPRequest(c)  // 处理http请求
+
+    engine.pool.Put(c)
+}
+```
+
+通过对象池，减少垃圾回收的次数和内存申请的消耗。
+
+```go
+// 这样可以在使用len(t)的时候，只计算一次len(t)，减少计算的次数。
+for i, tl := 0, len(t); i < tl; i++ {
+		if t[i].method != httpMethod {  // 把应该立即返回的条件写在前面
+			continue  
+		}
+```
+
+```go
+type Engine struct {
+	...
+}
+
+var _ IRouter = (*Engine)(nil)
+```
+
+这样写是为了确保Engine结构体实现了IRouter接口，把问题暴露在编译阶段（如果在写某个结构体的时候，需要让改结构体实现某个接口，就可以采用这样的写法）
+
+```go
+type methodTree struct {
+	method string
+	root   *node
+}
+
+type methodTrees []methodTree
+
+func (trees methodTrees) get(method string) *node {
+    for _, tree := range trees {
+       if tree.method == method {
+          return tree.root
+       }
+    }
+    return nil
+}
+```
+
+每种请求方法都对应了一棵单独的树（共9种请求方法），methodTrees切片中存放了所有的请求方法，通过遍历methodTrees，就可以得到该方法对应的树结构。
+
+```go
+func Default() *Engine {
+    ...
+	engine := New()
+	...
+}
+
+func New() *Engine {
+    ...
+	trees:make(methodTrees, 0, 9),
+    ...
+}
+```
+
+在初始化结构体时，一次性把容量申请到位，防止频繁地去扩容。
+
+```go
+type node struct {
+   // 节点路径，比如上面的s，earch，和upport
+	path      string
+	// 和children字段对应, 保存的是分裂的分支的第一个字符
+	// 例如search和support, 那么s节点的indices对应的"eu"
+	// 代表有两个分支, 分支的首字母分别是e和u
+	indices   string
+	// 儿子节点
+	children  []*node
+	// 处理函数链条（切片）
+	handlers  HandlersChain
+	// 优先级，子节点、子子节点等注册的handler数量
+	priority  uint32
+	// 节点类型，包括static, root, param, catchAll
+	// static: 静态节点（默认），比如上面的s，earch等节点
+	// root: 树的根节点
+	// catchAll: 有*匹配的节点
+	// param: 参数节点
+	nType     nodeType
+	// 路径上最大参数个数
+	maxParams uint8
+	// 节点是否是参数节点，比如上面的:post
+	wildChild bool
+	// 完整路径
+	fullPath  string
+}
+```
+
+这个node就是构造路由前缀树的结构体。
+
+### 路由注册
+
+```go
+func Default() *Engine {
+    debugPrintWARNINGDefault()
+    engine := New()
+    engine.Use(Logger(), Recovery())
+    return engine
+}
+```
+
+```go
+func (group *RouterGroup) GET(relativePath string, handlers ...HandlerFunc) IRoutes {
+    return group.handle(http.MethodGet, relativePath, handlers)
+}
+```
+
+在使用gin.Default()获取一个路由实例的时候，返回的是一个Engine类型的变量，但是在route.Get()时，Get()方法绑定的类型却是RouterGroup，为什么可以这样呢？
+
+```go
+type Engine struct {
+    RouterGroup
+	...
+}
+```
+
+因为Engine结构体中嵌套了RouterGroup。RouterGroup实现了Get()方法。用Engine类型的变量来调用Get()方法，是多态的一种体现。
