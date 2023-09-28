@@ -200,7 +200,7 @@ func main() {
 
 我们首先定义一个存放模板文件的`templates`文件夹，然后在其内部按照业务分别定义一个`posts`文件夹和一个`users`文件夹。 `posts/index.html`文件的内容如下：
 
-```template
+```html
 {{define "posts/index.html"}}
 <!DOCTYPE html>
 <html lang="en">
@@ -220,7 +220,7 @@ func main() {
 
 `users/index.html`文件的内容如下：
 
-```template
+```html
 {{define "users/index.html"}}
 <!DOCTYPE html>
 <html lang="en">
@@ -418,6 +418,36 @@ func main() {
     r.Run(":9003")
 }
 ```
+
+## context组件
+
+在Gin框架中，`context`是一个非常重要的组件，它用于处理HTTP请求和响应，以及在请求处理过程中传递数据和控制流。以下是对Gin框架中`context`的详细介绍：
+
+1. **HTTP请求和响应管理**：
+   `context`对象封装了HTTP请求和响应的所有信息，包括HTTP方法、请求路径、请求头、请求参数、响应状态码、响应头等。通过`context`，您可以轻松地访问和操作这些信息。
+
+2. **参数解析**：
+   Gin的`context`提供了方便的方法来解析HTTP请求中的参数，包括查询参数、表单数据、JSON请求体等。您可以使用`Bind`、`ShouldBind`等方法来将请求参数绑定到Go结构体中，从而方便地进行验证和处理。
+
+3. **路由参数**：
+   `context`还允许您从URL路径中提取参数。例如，如果您定义了一个路由`/user/:id`，则可以使用`context.Param("id")`来获取`:id`占位符的值。
+
+4. **中间件支持**：
+   Gin的中间件是一种机制，可以在请求处理过程中添加预处理逻辑，如身份验证、日志记录、错误处理等。`context`对象可以在中间件之间传递，以便在请求处理过程中共享数据和控制流。中间件可以通过`context`的方法来操作请求和响应。
+
+5. **错误处理**：
+   在处理请求期间，如果发生错误，您可以使用`context`的`Abort`、`JSON`等方法来处理错误并生成适当的响应。例如，您可以使用`context.AbortWithStatus`来中止请求处理并返回指定的HTTP状态码。
+
+6. **响应生成**：
+   使用`context`，您可以方便地生成HTTP响应，包括设置响应状态码、响应头和响应体。例如，您可以使用`context.JSON`、`context.String`等方法来生成JSON响应或纯文本响应。
+
+7. **上下文数据传递**：
+   您可以在`context`对象中存储自定义数据，这些数据在请求处理过程中可以跨中间件和处理函数传递。这对于在整个请求周期中共享信息非常有用。
+
+8. **请求上下文的超时和取消**：
+   Gin的`context`支持上下文的超时和取消。这意味着您可以设置一个超时，以确保长时间运行的请求不会无限期地等待响应。
+
+总之，Gin框架的`context`是一个非常重要的组件，它为处理HTTP请求和响应提供了丰富的功能和工具，使得开发Web应用变得更加便捷和灵活。通过熟练使用`context`，您可以更好地控制和管理您的Web应用程序的行为。
 
 ## 获取参数
 
@@ -694,18 +724,11 @@ func RedirectHandler(c *gin.Context) {
 
 **HTTP 重定向是在客户端与服务器之间进行的，客户端收到重定向响应后，会根据响应头中的新地址重新发起请求。**
 
+> 用户侧的URL地址会发生改变。
+
 ### 2.路由重定向
 
-路由重定向是指在应用程序的路由层级进行的重定向，它是通过修改路由规则来实现的。在 Gin 中，你可以使用 `c.Redirect` 方法或 `c.Request.URL.Path` 来进行路由重定向。
-
-```go
-func RouteRedirectHandler(c *gin.Context) {
-    // 使用 c.Redirect 进行路由重定向
-    c.Redirect(http.StatusFound, "/new-route")
-}
-```
-
-或者
+路由重定向是指在应用程序的路由层级进行的重定向，它是通过修改路由规则来实现的。在 Gin 中，你可以使用 `c.Request.URL.Path` 来进行路由重定向。
 
 ```go
 func RouteRedirectHandler(c *gin.Context) {
@@ -716,6 +739,8 @@ func RouteRedirectHandler(c *gin.Context) {
 ```
 
 **路由重定向是在服务器端进行的，客户端不需要知道关于重定向的任何信息**，它只需向原始路径发出请求，服务器会根据路由规则将其重定向到新的路径。
+
+> 用户侧的URL地址不会发生变化。
 
 总的来说，HTTP 重定向是通过发送 HTTP 响应告知客户端进行重定向，而路由重定向是在服务器端通过修改路由规则将请求重定向到新的路由处理程序函数。在 Gin 中，你可以根据具体需求选择使用哪种方式来实现重定向。
 
@@ -3050,3 +3075,1857 @@ type Engine struct {
 ```
 
 因为Engine结构体中嵌套了RouterGroup。RouterGroup实现了Get()方法。用Engine类型的变量来调用Get()方法，是多态的一种体现。
+
+## Zap
+
+2023.09.28
+
+### 介绍
+
+Zap是一个高性能的、结构化的日志库，专门为Go语言设计和优化。它是由Uber开发并维护的，旨在提供高性能的日志记录，同时保持简单和易用。以下是关于Zap库的详细介绍：
+
+1. **高性能**：Zap被设计为一个极其高性能的日志库。它采用了零分配（zero-allocation）的设计，意味着在记录日志时不会分配不必要的内存，从而减少了垃圾回收的压力。这对于高并发和低延迟的应用程序特别重要。
+
+2. **结构化日志**：Zap鼓励使用结构化日志记录方式，而不是传统的文本日志。结构化日志可以更轻松地进行查询和分析，因为每个日志消息都包含了一组字段和值。这有助于构建更可读和可搜索的日志。
+
+3. **多日志级别**：Zap支持多种日志级别，包括Debug、Info、Warn、Error和DPanic（处理恶劣情况但不终止应用程序）。你可以根据需要选择适当的级别来记录不同严重程度的信息。
+
+4. **自定义日志输出**：Zap允许你将日志输出到不同的目标，包括控制台、文件、网络和其他自定义目标。你可以根据应用程序的需求轻松定制日志输出。
+
+5. **性能测量**：Zap内置了性能测量工具，可以用于测量日志记录操作的性能，以便进行优化。
+
+6. **丰富的上下文**：Zap允许你添加上下文信息，例如请求ID、用户ID等，以便更容易跟踪问题和分析日志。
+
+7. **延迟初始化**：Zap支持延迟初始化，这意味着你可以在应用程序启动时设置全局的日志配置，然后在需要时延迟初始化具体的日志记录器，以提高性能。
+
+8. **社区支持**：Zap是一个活跃的开源项目，拥有大量的社区支持和贡献，因此你可以期望在文档、示例和问题解决方案方面找到丰富的资源。
+
+下面是一个简单的示例，展示了如何在Go中使用Zap库：
+
+```go
+package main
+
+import (
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+func main() {
+	// 配置日志记录器
+	config := zap.NewDevelopmentConfig()
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	logger, _ := config.Build()
+
+	// 记录日志消息
+	logger.Info("This is an info message",
+		zap.String("key", "value"),
+		zap.Int("count", 42),
+	)
+
+	// 关闭日志记录器
+	defer logger.Sync()
+}
+```
+
+在实际应用程序中，你可以根据需要自定义日志记录器的配置，包括输出目标、日志级别和其他设置。Zap库的灵活性和性能使其成为许多Go项目的首选日志库之一。你可以查看Zap的官方文档以获取更多信息和示例：https://pkg.go.dev/go.uber.org/zap
+
+### 默认的Go Logger
+
+在介绍Uber-go的zap包之前，让我们先看看Go语言提供的基本日志功能。Go语言提供的默认日志包是https://golang.org/pkg/log/。
+
+**实现Go Logger**
+
+实现一个Go语言中的日志记录器非常简单——创建一个新的日志文件，然后设置它为日志的输出位置。
+
+**设置Logger**
+
+我们可以像下面的代码一样设置日志记录器
+
+```go
+func SetupLogger() {
+	logFileLocation, _ := os.OpenFile("/Users/q1mi/test.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0744)
+	log.SetOutput(logFileLocation)
+}
+```
+
+**使用Logger**
+
+让我们来写一些虚拟的代码来使用这个日志记录器。
+
+在当前的示例中，我们将建立一个到URL的HTTP连接，并将状态代码/错误记录到日志文件中。
+
+```go
+func simpleHttpGet(url string) {
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Error fetching url %s : %s", url, err.Error())
+	} else {
+		log.Printf("Status Code for %s : %s", url, resp.Status)
+		resp.Body.Close()
+	}
+}
+```
+
+**Logger的运行**
+
+现在让我们执行上面的代码并查看日志记录器的运行情况。
+
+```go
+func main() {
+	SetupLogger()
+	simpleHttpGet("www.google.com")
+	simpleHttpGet("http://www.google.com")
+}
+```
+
+当我们执行上面的代码，我们能看到一个`test.log`文件被创建，下面的内容会被添加到这个日志文件中。
+
+```bash
+2019/05/24 01:14:13 Error fetching url www.google.com : Get www.google.com: unsupported protocol scheme ""
+2019/05/24 01:14:14 Status Code for http://www.google.com : 200 OK
+```
+
+**Go Logger的优势和劣势**
+
+**优势**
+
+它最大的优点是使用非常简单。我们可以设置任何`io.Writer`作为日志记录输出并向其发送要写入的日志。
+
+**劣势**
+
+- 仅限基本的日志级别
+
+  - 只有一个`Print`选项。不支持`INFO`/`DEBUG`等多个级别。
+
+- 对于错误日志，它有
+
+  ```
+  Fatal
+  ```
+
+  和
+
+  ```
+  Panic
+  ```
+
+  - Fatal日志通过调用`os.Exit(1)`来结束程序
+  - Panic日志在写入日志消息之后抛出一个panic
+  - 但是它缺少一个ERROR日志级别，这个级别可以在不抛出panic或退出程序的情况下记录错误
+
+- 缺乏日志格式化的能力——例如记录调用者的函数名和行号，格式化日期和时间格式，等等。
+
+- 不提供日志切割的能力。
+
+### Uber-go Zap
+
+[Zap](https://github.com/uber-go/zap)是非常快的、结构化的，分日志级别的Go日志库。
+
+**为什么选择Uber-go zap**
+
+- 它同时提供了结构化日志记录和printf风格的日志记录
+- 它非常的快
+
+根据Uber-go Zap的文档，它的性能比类似的结构化日志包更好——也比标准库更快。 以下是Zap发布的基准测试信息
+
+记录一条消息和10个字段:
+
+|     Package     |    Time     | Time % to zap | Objects Allocated |
+| :-------------: | :---------: | :-----------: | :---------------: |
+|      ⚡️ zap      |  862 ns/op  |      +0%      |    5 allocs/op    |
+| ⚡️ zap (sugared) | 1250 ns/op  |     +45%      |   11 allocs/op    |
+|     zerolog     | 4021 ns/op  |     +366%     |   76 allocs/op    |
+|     go-kit      | 4542 ns/op  |     +427%     |   105 allocs/op   |
+|    apex/log     | 26785 ns/op |    +3007%     |   115 allocs/op   |
+|     logrus      | 29501 ns/op |    +3322%     |   125 allocs/op   |
+|      log15      | 29906 ns/op |    +3369%     |   122 allocs/op   |
+
+记录一个静态字符串，没有任何上下文或printf风格的模板：
+
+|     Package      |    Time    | Time % to zap | Objects Allocated |
+| :--------------: | :--------: | :-----------: | :---------------: |
+|      ⚡️ zap       | 118 ns/op  |      +0%      |    0 allocs/op    |
+| ⚡️ zap (sugared)  | 191 ns/op  |     +62%      |    2 allocs/op    |
+|     zerolog      |  93 ns/op  |     -21%      |    0 allocs/op    |
+|      go-kit      | 280 ns/op  |     +137%     |   11 allocs/op    |
+| standard library | 499 ns/op  |     +323%     |    2 allocs/op    |
+|     apex/log     | 1990 ns/op |    +1586%     |   10 allocs/op    |
+|      logrus      | 3129 ns/op |    +2552%     |   24 allocs/op    |
+|      log15       | 3887 ns/op |    +3194%     |   23 allocs/op    |
+
+### 安装
+
+运行下面的命令安装zap
+
+```bash
+go get -u go.uber.org/zap
+```
+
+### 配置Zap Logger
+
+Zap提供了两种类型的日志记录器—`Sugared Logger`和`Logger`。
+
+在性能很好但不是很关键的上下文中，使用`SugaredLogger`。它比其他结构化日志记录包快4-10倍，并且支持结构化和printf风格的日志记录。
+
+在每一微秒和每一次内存分配都很重要的上下文中，使用`Logger`。它甚至比`SugaredLogger`更快，内存分配次数也更少，但它只支持强类型的结构化日志记录。
+
+#### Logger
+
+- 通过调用`zap.NewProduction()`/`zap.NewDevelopment()`或者`zap.Example()`创建一个Logger。
+- 上面的每一个函数都将创建一个logger。唯一的区别在于它将记录的信息不同。例如production logger默认记录调用函数信息、日期和时间等。
+- 通过Logger调用Info/Error等。
+- 默认情况下日志都会打印到应用程序的console界面。
+
+```go
+var logger *zap.Logger
+
+func main() {
+	InitLogger()
+  defer logger.Sync()
+	simpleHttpGet("www.google.com")
+	simpleHttpGet("http://www.google.com")
+}
+
+func InitLogger() {
+	logger, _ = zap.NewProduction()
+}
+
+func simpleHttpGet(url string) {
+	resp, err := http.Get(url)
+	if err != nil {
+		logger.Error(
+			"Error fetching url..",
+			zap.String("url", url),
+			zap.Error(err))
+	} else {
+		logger.Info("Success..",
+			zap.String("statusCode", resp.Status),
+			zap.String("url", url))
+		resp.Body.Close()
+	}
+}
+```
+
+在上面的代码中，我们首先创建了一个Logger，然后使用Info/ Error等Logger方法记录消息。
+
+日志记录器方法的语法是这样的：
+
+```go
+func (log *Logger) MethodXXX(msg string, fields ...Field) 
+```
+
+其中`MethodXXX`是一个可变参数函数，可以是Info / Error/ Debug / Panic等。每个方法都接受一个消息字符串和任意数量的`zapcore.Field`场参数。
+
+每个`zapcore.Field`其实就是一组键值对参数。
+
+我们执行上面的代码会得到如下输出结果：
+
+```bash
+{"level":"error","ts":1572159218.912792,"caller":"zap_demo/temp.go:25","msg":"Error fetching url..","url":"www.sogo.com","error":"Get www.sogo.com: unsupported protocol scheme \"\"","stacktrace":"main.simpleHttpGet\n\t/Users/q1mi/zap_demo/temp.go:25\nmain.main\n\t/Users/q1mi/zap_demo/temp.go:14\nruntime.main\n\t/usr/local/go/src/runtime/proc.go:203"}
+{"level":"info","ts":1572159219.1227388,"caller":"zap_demo/temp.go:30","msg":"Success..","statusCode":"200 OK","url":"http://www.sogo.com"}
+```
+
+#### Sugared Logger
+
+现在让我们使用Sugared Logger来实现相同的功能。
+
+- 大部分的实现基本都相同。
+- 惟一的区别是，我们通过调用主logger的`. Sugar()`方法来获取一个`SugaredLogger`。
+- 然后使用`SugaredLogger`以`printf`格式记录语句
+
+下面是修改过后使用`SugaredLogger`代替`Logger`的代码：
+
+```go
+var sugarLogger *zap.SugaredLogger
+
+func main() {
+	InitLogger()
+	defer sugarLogger.Sync()
+	simpleHttpGet("www.google.com")
+	simpleHttpGet("http://www.google.com")
+}
+
+func InitLogger() {
+  logger, _ := zap.NewProduction()
+	sugarLogger = logger.Sugar()
+}
+
+func simpleHttpGet(url string) {
+	sugarLogger.Debugf("Trying to hit GET request for %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		sugarLogger.Errorf("Error fetching URL %s : Error = %s", url, err)
+	} else {
+		sugarLogger.Infof("Success! statusCode = %s for URL %s", resp.Status, url)
+		resp.Body.Close()
+	}
+}
+```
+
+当你执行上面的代码会得到如下输出：
+
+```bash
+{"level":"error","ts":1572159149.923002,"caller":"logic/temp2.go:27","msg":"Error fetching URL www.sogo.com : Error = Get www.sogo.com: unsupported protocol scheme \"\"","stacktrace":"main.simpleHttpGet\n\t/Users/q1mi/zap_demo/logic/temp2.go:27\nmain.main\n\t/Users/q1mi/zap_demo/logic/temp2.go:14\nruntime.main\n\t/usr/local/go/src/runtime/proc.go:203"}
+{"level":"info","ts":1572159150.192585,"caller":"logic/temp2.go:29","msg":"Success! statusCode = 200 OK for URL http://www.sogo.com"}
+```
+
+你应该注意到的了，到目前为止这两个logger都打印输出JSON结构格式。
+
+在本博客的后面部分，我们将更详细地讨论SugaredLogger，并了解如何进一步配置它。
+
+### 定制logger
+
+#### 将日志写入文件而不是终端
+
+我们要做的第一个更改是把日志写入文件，而不是打印到应用程序控制台。
+
+- 我们将使用`zap.New(…)`方法来手动传递所有配置，而不是使用像`zap.NewProduction()`这样的预置方法来创建logger。
+
+```go
+func New(core zapcore.Core, options ...Option) *Logger
+```
+
+`zapcore.Core`需要三个配置——`Encoder`，`WriteSyncer`，`LogLevel`。
+
+1.**Encoder**:编码器(如何写入日志)。我们将使用开箱即用的`NewJSONEncoder()`，并使用预先设置的`ProductionEncoderConfig()`。
+
+```go
+zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+```
+
+2.**WriterSyncer** ：指定日志将写到哪里去。我们使用`zapcore.AddSync()`函数并且将打开的文件句柄传进去。
+
+```go
+file, _ := os.Create("./test.log")
+writeSyncer := zapcore.AddSync(file)
+```
+
+3.**Log Level**：哪种级别的日志将被写入。
+
+我们将修改上述部分中的Logger代码，并重写`InitLogger()`方法。其余方法—`main()` /`SimpleHttpGet()`保持不变。
+
+```go
+func InitLogger() {
+	writeSyncer := getLogWriter()
+	encoder := getEncoder()
+	core := zapcore.NewCore(encoder, writeSyncer, zapcore.DebugLevel)
+
+	logger := zap.New(core)
+	sugarLogger = logger.Sugar()
+}
+
+func getEncoder() zapcore.Encoder {
+	return zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+}
+
+func getLogWriter() zapcore.WriteSyncer {
+	file, _ := os.Create("./test.log")
+	return zapcore.AddSync(file)
+}
+```
+
+当使用这些修改过的logger配置调用上述部分的`main()`函数时，以下输出将打印在文件——`test.log`中。
+
+```bash
+{"level":"debug","ts":1572160754.994731,"msg":"Trying to hit GET request for www.sogo.com"}
+{"level":"error","ts":1572160754.994982,"msg":"Error fetching URL www.sogo.com : Error = Get www.sogo.com: unsupported protocol scheme \"\""}
+{"level":"debug","ts":1572160754.994996,"msg":"Trying to hit GET request for http://www.sogo.com"}
+{"level":"info","ts":1572160757.3755069,"msg":"Success! statusCode = 200 OK for URL http://www.sogo.com"}
+```
+
+#### 将JSON Encoder更改为普通的Log Encoder
+
+现在，我们希望将编码器从JSON Encoder更改为普通Encoder。为此，我们需要将`NewJSONEncoder()`更改为`NewConsoleEncoder()`。
+
+```go
+return zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig())
+```
+
+当使用这些修改过的logger配置调用上述部分的`main()`函数时，以下输出将打印在文件——`test.log`中。
+
+```bash
+1.572161051846623e+09	debug	Trying to hit GET request for www.sogo.com
+1.572161051846828e+09	error	Error fetching URL www.sogo.com : Error = Get www.sogo.com: unsupported protocol scheme ""
+1.5721610518468401e+09	debug	Trying to hit GET request for http://www.sogo.com
+1.572161052068744e+09	info	Success! statusCode = 200 OK for URL http://www.sogo.com
+```
+
+#### 更改时间编码并添加调用者详细信息
+
+鉴于我们对配置所做的更改，有下面两个问题：
+
+- 时间是以非人类可读的方式展示，例如1.572161051846623e+09
+- 调用方函数的详细信息没有显示在日志中
+
+我们要做的第一件事是覆盖默认的`ProductionConfig()`，并进行以下更改:
+
+- 修改时间编码器
+- 在日志文件中使用大写字母记录日志级别
+
+```go
+func getEncoder() zapcore.Encoder {
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	return zapcore.NewConsoleEncoder(encoderConfig)
+}
+```
+
+接下来，我们将修改zap logger代码，添加将调用函数信息记录到日志中的功能。为此，我们将在`zap.New(..)`函数中添加一个`Option`。
+
+```go
+logger := zap.New(core, zap.AddCaller())
+```
+
+当使用这些修改过的logger配置调用上述部分的`main()`函数时，以下输出将打印在文件——`test.log`中。
+
+```bash
+2019-10-27T15:33:29.855+0800	DEBUG	logic/temp2.go:47	Trying to hit GET request for www.sogo.com
+2019-10-27T15:33:29.855+0800	ERROR	logic/temp2.go:50	Error fetching URL www.sogo.com : Error = Get www.sogo.com: unsupported protocol scheme ""
+2019-10-27T15:33:29.856+0800	DEBUG	logic/temp2.go:47	Trying to hit GET request for http://www.sogo.com
+2019-10-27T15:33:30.125+0800	INFO	logic/temp2.go:52	Success! statusCode = 200 OK for URL http://www.sogo.com
+```
+
+#### AddCallerSkip
+
+当我们不是直接使用初始化好的logger实例记录日志，而是将其包装成一个函数等，此时日录日志的函数调用链会增加，想要获得准确的调用信息就需要通过`AddCallerSkip`函数来跳过。
+
+```go
+logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+```
+
+#### 将日志输出到多个位置
+
+我们可以将日志同时输出到文件和终端。
+
+```go
+func getLogWriter() zapcore.WriteSyncer {
+	file, _ := os.Create("./test.log")
+	// 利用io.MultiWriter支持文件和终端两个输出目标
+	ws := io.MultiWriter(file, os.Stdout)
+	return zapcore.AddSync(ws)
+}
+```
+
+#### 将err日志单独输出到文件
+
+有时候我们除了将全量日志输出到`xx.log`文件中之外，还希望将`ERROR`级别的日志单独输出到一个名为`xx.err.log`的日志文件中。我们可以通过以下方式实现。
+
+```go
+func InitLogger() {
+	encoder := getEncoder()
+	// test.log记录全量日志
+	logF, _ := os.Create("./test.log")
+	c1 := zapcore.NewCore(encoder, zapcore.AddSync(logF), zapcore.DebugLevel)
+	// test.err.log记录ERROR级别的日志
+	errF, _ := os.Create("./test.err.log")
+	c2 := zapcore.NewCore(encoder, zapcore.AddSync(errF), zap.ErrorLevel)
+	// 使用NewTee将c1和c2合并到core
+	core := zapcore.NewTee(c1, c2)
+	logger = zap.New(core, zap.AddCaller())
+}
+```
+
+### 使用Lumberjack进行日志切割归档
+
+这个日志程序中唯一缺少的就是日志切割归档功能。
+
+> *Zap本身不支持切割归档日志文件*
+
+官方的说法是为了添加日志切割归档功能，我们将使用第三方库[Lumberjack](https://github.com/natefinch/lumberjack)来实现。
+
+目前只支持按文件大小切割，原因是按时间切割效率低且不能保证日志数据不被破坏。详情戳https://github.com/natefinch/lumberjack/issues/54。
+
+想按日期切割可以使用[github.com/lestrrat-go/file-rotatelogs](https://github.com/lestrrat-go/file-rotatelogs)这个库，虽然目前不维护了，但也够用了。
+
+```go
+// 使用file-rotatelogs按天切割日志
+
+import rotatelogs "github.com/lestrrat-go/file-rotatelogs"
+
+l, _ := rotatelogs.New(
+	filename+".%Y%m%d%H%M",
+	rotatelogs.WithMaxAge(30*24*time.Hour),    // 最长保存30天
+	rotatelogs.WithRotationTime(time.Hour*24), // 24小时切割一次
+)
+zapcore.AddSync(l)
+```
+
+#### 安装
+
+执行下面的命令安装 Lumberjack v2 版本。
+
+```bash
+go get gopkg.in/natefinch/lumberjack.v2
+```
+
+#### zap logger中加入Lumberjack
+
+要在zap中加入Lumberjack支持，我们需要修改`WriteSyncer`代码。我们将按照下面的代码修改`getLogWriter()`函数：
+
+```go
+func getLogWriter() zapcore.WriteSyncer {
+	lumberJackLogger := &lumberjack.Logger{
+		Filename:   "./test.log",
+		MaxSize:    10,
+		MaxBackups: 5,
+		MaxAge:     30,
+		Compress:   false,
+	}
+	return zapcore.AddSync(lumberJackLogger)
+}
+```
+
+Lumberjack Logger采用以下属性作为输入:
+
+- Filename: 日志文件的位置
+- MaxSize：在进行切割之前，日志文件的最大大小（以MB为单位）
+- MaxBackups：保留旧文件的最大个数
+- MaxAges：保留旧文件的最大天数
+- Compress：是否压缩/归档旧文件
+
+### 测试所有功能
+
+最终，使用Zap/Lumberjack logger的完整示例代码如下：
+
+```go
+package main
+
+import (
+	"net/http"
+
+	"gopkg.in/natefinch/lumberjack.v2"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+var sugarLogger *zap.SugaredLogger
+
+func main() {
+	InitLogger()
+	defer sugarLogger.Sync()
+	simpleHttpGet("www.sogo.com")
+	simpleHttpGet("http://www.sogo.com")
+}
+
+func InitLogger() {
+	writeSyncer := getLogWriter()
+	encoder := getEncoder()
+	core := zapcore.NewCore(encoder, writeSyncer, zapcore.DebugLevel)
+
+	logger := zap.New(core, zap.AddCaller())
+	sugarLogger = logger.Sugar()
+}
+
+func getEncoder() zapcore.Encoder {
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	return zapcore.NewConsoleEncoder(encoderConfig)
+}
+
+func getLogWriter() zapcore.WriteSyncer {
+	lumberJackLogger := &lumberjack.Logger{
+		Filename:   "./test.log",
+		MaxSize:    1,
+		MaxBackups: 5,
+		MaxAge:     30,
+		Compress:   false,
+	}
+	return zapcore.AddSync(lumberJackLogger)
+}
+
+func simpleHttpGet(url string) {
+	sugarLogger.Debugf("Trying to hit GET request for %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		sugarLogger.Errorf("Error fetching URL %s : Error = %s", url, err)
+	} else {
+		sugarLogger.Infof("Success! statusCode = %s for URL %s", resp.Status, url)
+		resp.Body.Close()
+	}
+}
+```
+
+执行上述代码，下面的内容会输出到文件——test.log中。
+
+```go
+2019-10-27T15:50:32.944+0800	DEBUG	logic/temp2.go:48	Trying to hit GET request for www.sogo.com
+2019-10-27T15:50:32.944+0800	ERROR	logic/temp2.go:51	Error fetching URL www.sogo.com : Error = Get www.sogo.com: unsupported protocol scheme ""
+2019-10-27T15:50:32.944+0800	DEBUG	logic/temp2.go:48	Trying to hit GET request for http://www.sogo.com
+2019-10-27T15:50:33.165+0800	INFO	logic/temp2.go:53	Success! statusCode = 200 OK for URL http://www.sogo.com
+```
+
+同时，可以在`main`函数中循环记录日志，测试日志文件是否会自动切割和归档（日志文件每1MB会切割并且在当前目录下最多保存5个备份）。
+
+至此，我们总结了如何将Zap日志程序集成到Go应用程序项目中。
+
+## Gin框架中使用Zap
+
+使用zap接收gin框架默认的日志并配置日志归档
+
+我们在基于gin框架开发项目时通常都会选择使用专业的日志库来记录项目中的日志，go语言常用的日志库有`zap`、`logrus`等。网上也有很多类似的教程，我之前也翻译过一篇[《在Go语言项目中使用Zap日志库》](https://www.liwenzhou.com/posts/Go/zap/)。
+
+但是我们该如何在日志中记录gin框架本身输出的那些日志呢？
+
+### gin默认的中间件
+
+首先我们来看一个最简单的gin项目：
+
+```go
+func main() {
+	r := gin.Default()
+	r.GET("/hello", func(c *gin.Context) {
+		c.String("hello liwenzhou.com!")
+	})
+	r.Run(
+}
+```
+
+接下来我们看一下`gin.Default()`的源码：
+
+```go
+func Default() *Engine {
+	debugPrintWARNINGDefault()
+	engine := New()
+	engine.Use(Logger(), Recovery())
+	return engine
+}
+```
+
+也就是我们在使用`gin.Default()`的同时是用到了gin框架内的两个默认中间件`Logger()`和`Recovery()`。
+
+其中`Logger()`是把gin框架本身的日志输出到标准输出（我们本地开发调试时在终端输出的那些日志就是它的功劳），而`Recovery()`是在程序出现panic的时候恢复现场并写入500响应的。
+
+### 基于zap的中间件
+
+我们可以模仿`Logger()`和`Recovery()`的实现，使用我们的日志库来接收gin框架默认输出的日志。
+
+这里以zap为例，我们实现两个中间件如下：
+
+```go
+// GinLogger 接收gin框架默认的日志
+func GinLogger(logger *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+		c.Next()
+
+		cost := time.Since(start)
+		logger.Info(path,
+			zap.Int("status", c.Writer.Status()),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("ip", c.ClientIP()),
+			zap.String("user-agent", c.Request.UserAgent()),
+			zap.String("errors", c.Errors.ByType(gin.ErrorTypePrivate).String()),
+			zap.Duration("cost", cost),
+		)
+	}
+}
+
+// GinRecovery recover掉项目可能出现的panic
+func GinRecovery(logger *zap.Logger, stack bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Check for a broken connection, as it is not really a
+				// condition that warrants a panic stack trace.
+				var brokenPipe bool
+				if ne, ok := err.(*net.OpError); ok {
+					if se, ok := ne.Err.(*os.SyscallError); ok {
+						if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
+							brokenPipe = true
+						}
+					}
+				}
+
+				httpRequest, _ := httputil.DumpRequest(c.Request, false)
+				if brokenPipe {
+					logger.Error(c.Request.URL.Path,
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
+					// If the connection is dead, we can't write a status to it.
+					c.Error(err.(error)) // nolint: errcheck
+					c.Abort()
+					return
+				}
+
+				if stack {
+					logger.Error("[Recovery from panic]",
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+						zap.String("stack", string(debug.Stack())),
+					)
+				} else {
+					logger.Error("[Recovery from panic]",
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
+				}
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
+}
+```
+
+*如果不想自己实现，可以使用github上有别人封装好的https://github.com/gin-contrib/zap。*
+
+这样我们就可以在gin框架中使用我们上面定义好的两个中间件来代替gin框架默认的`Logger()`和`Recovery()`了。
+
+```go
+r := gin.New()
+r.Use(GinLogger(), GinRecovery())
+```
+
+### 在gin项目中使用zap
+
+最后我们再加入我们项目中常用的日志切割，完整版的`logger.go`代码如下：
+
+```go
+package logger
+
+import (
+	"gin_zap_demo/config"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"os"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/natefinch/lumberjack"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+var lg *zap.Logger
+
+// InitLogger 初始化Logger
+func InitLogger(cfg *config.LogConfig) (err error) {
+	writeSyncer := getLogWriter(cfg.Filename, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
+	encoder := getEncoder()
+	var l = new(zapcore.Level)
+	err = l.UnmarshalText([]byte(cfg.Level))
+	if err != nil {
+		return
+	}
+	core := zapcore.NewCore(encoder, writeSyncer, l)
+
+	lg = zap.New(core, zap.AddCaller())
+	zap.ReplaceGlobals(lg) // 替换zap包中全局的logger实例，后续在其他包中只需使用zap.L()调用即可
+	return
+}
+
+func getEncoder() zapcore.Encoder {
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.TimeKey = "time"
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	encoderConfig.EncodeDuration = zapcore.SecondsDurationEncoder
+	encoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+	return zapcore.NewJSONEncoder(encoderConfig)
+}
+
+func getLogWriter(filename string, maxSize, maxBackup, maxAge int) zapcore.WriteSyncer {
+	lumberJackLogger := &lumberjack.Logger{
+		Filename:   filename,
+		MaxSize:    maxSize,
+		MaxBackups: maxBackup,
+		MaxAge:     maxAge,
+	}
+	return zapcore.AddSync(lumberJackLogger)
+}
+
+// GinLogger 接收gin框架默认的日志
+func GinLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+		c.Next()
+
+		cost := time.Since(start)
+		lg.Info(path,
+			zap.Int("status", c.Writer.Status()),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("ip", c.ClientIP()),
+			zap.String("user-agent", c.Request.UserAgent()),
+			zap.String("errors", c.Errors.ByType(gin.ErrorTypePrivate).String()),
+			zap.Duration("cost", cost),
+		)
+	}
+}
+
+// GinRecovery recover掉项目可能出现的panic，并使用zap记录相关日志
+func GinRecovery(stack bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Check for a broken connection, as it is not really a
+				// condition that warrants a panic stack trace.
+				var brokenPipe bool
+				if ne, ok := err.(*net.OpError); ok {
+					if se, ok := ne.Err.(*os.SyscallError); ok {
+						if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
+							brokenPipe = true
+						}
+					}
+				}
+
+				httpRequest, _ := httputil.DumpRequest(c.Request, false)
+				if brokenPipe {
+					lg.Error(c.Request.URL.Path,
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
+					// If the connection is dead, we can't write a status to it.
+					c.Error(err.(error)) // nolint: errcheck
+					c.Abort()
+					return
+				}
+
+				if stack {
+					lg.Error("[Recovery from panic]",
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+						zap.String("stack", string(debug.Stack())),
+					)
+				} else {
+					lg.Error("[Recovery from panic]",
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
+				}
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
+}
+```
+
+然后定义日志相关配置：
+
+```go
+type LogConfig struct {
+	Level string `json:"level"`
+	Filename string `json:"filename"`
+	MaxSize int `json:"maxsize"`
+	MaxAge int `json:"max_age"`
+	MaxBackups int `json:"max_backups"`
+}
+```
+
+在项目中先从配置文件加载配置信息，再调用`logger.InitLogger(config.Conf.LogConfig)`即可完成logger实例的初识化。其中，通过`r.Use(logger.GinLogger(), logger.GinRecovery(true))`注册我们的中间件来使用zap接收gin框架自身的日志，在项目中需要的地方通过使用`zap.L().Xxx()`方法来记录自定义日志信息。
+
+```go
+package main
+
+import (
+	"fmt"
+	"gin_zap_demo/config"
+	"gin_zap_demo/logger"
+	"net/http"
+	"os"
+
+	"go.uber.org/zap"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	// load config from config.json
+	if len(os.Args) < 1 {
+		return
+	}
+
+	if err := config.Init(os.Args[1]); err != nil {
+		panic(err)
+	}
+	// init logger
+	if err := logger.InitLogger(config.Conf.LogConfig); err != nil {
+		fmt.Printf("init logger failed, err:%v\n", err)
+		return
+	}
+
+	gin.SetMode(config.Conf.Mode)
+
+	r := gin.Default()
+	// 注册zap相关中间件
+	r.Use(logger.GinLogger(), logger.GinRecovery(true))
+
+	r.GET("/hello", func(c *gin.Context) {
+		// 假设你有一些数据需要记录到日志中
+		var (
+			name = "q1mi"
+			age  = 18
+		)
+		// 记录日志并使用zap.Xxx(key, val)记录相关字段
+		zap.L().Debug("this is hello func", zap.String("user", name), zap.Int("age", age))
+
+		c.String(http.StatusOK, "hello liwenzhou.com!")
+	})
+
+	addr := fmt.Sprintf(":%v", config.Conf.Port)
+	r.Run(addr)
+}
+```
+
+## Viper
+
+[Viper](https://github.com/spf13/viper)是适用于Go应用程序的完整配置解决方案。它被设计用于在应用程序中工作，并且可以处理所有类型的配置需求和格式。
+
+鉴于`viper`库本身的README已经写得十分详细，这里就将其翻译成中文，并在最后附上两个项目中使用`viper`的示例代码以供参考。
+
+### 安装
+
+```bash
+go get github.com/spf13/viper
+```
+
+### 什么是Viper？
+
+Viper是适用于Go应用程序（包括`Twelve-Factor App`）的完整配置解决方案。它被设计用于在应用程序中工作，并且可以处理所有类型的配置需求和格式。它支持以下特性：
+
+- 设置默认值
+- 从`JSON`、`TOML`、`YAML`、`HCL`、`envfile`和`Java properties`格式的配置文件读取配置信息
+- 实时监控和重新读取配置文件（可选）
+- 从环境变量中读取
+- 从远程配置系统（etcd或Consul）读取并监控配置变化
+- 从命令行参数读取配置
+- 从buffer读取配置
+- 显式配置值
+
+### 为什么选择Viper?
+
+在构建现代应用程序时，你无需担心配置文件格式；你想要专注于构建出色的软件。Viper的出现就是为了在这方面帮助你的。
+
+Viper能够为你执行下列操作：
+
+1. 查找、加载和反序列化`JSON`、`TOML`、`YAML`、`HCL`、`INI`、`envfile`和`Java properties`格式的配置文件。
+2. 提供一种机制为你的不同配置选项设置默认值。
+3. 提供一种机制来通过命令行参数覆盖指定选项的值。
+4. 提供别名系统，以便在不破坏现有代码的情况下轻松重命名参数。
+5. 当用户提供了与默认值相同的命令行或配置文件时，可以很容易地分辨出它们之间的区别。
+
+Viper会按照下面的优先级。每个项目的优先级都高于它下面的项目:
+
+- 显示调用`Set`设置值
+- 命令行参数（flag）
+- 环境变量
+- 配置文件
+- key/value存储
+- 默认值
+
+**重要：** 目前Viper配置的键（Key）是大小写不敏感的。目前正在讨论是否将这一选项设为可选。
+
+### 把值存入Viper
+
+#### 建立默认值
+
+一个好的配置系统应该支持默认值。键不需要默认值，但如果没有通过配置文件、环境变量、远程配置或命令行标志（flag）设置键，则默认值非常有用。
+
+例如：
+
+```go
+viper.SetDefault("ContentDir", "content")
+viper.SetDefault("LayoutDir", "layouts")
+viper.SetDefault("Taxonomies", map[string]string{"tag": "tags", "category": "categories"})
+```
+
+#### 读取配置文件
+
+Viper需要最少知道在哪里查找配置文件的配置。Viper支持`JSON`、`TOML`、`YAML`、`HCL`、`envfile`和`Java properties`格式的配置文件。Viper可以搜索多个路径，但目前单个Viper实例只支持单个配置文件。Viper不默认任何配置搜索路径，将默认决策留给应用程序。
+
+下面是一个如何使用Viper搜索和读取配置文件的示例。不需要任何特定的路径，但是至少应该提供一个配置文件预期出现的路径。
+
+```go
+viper.SetConfigFile("./config.yaml") // 指定配置文件路径
+viper.SetConfigName("config") // 配置文件名称(无扩展名)
+viper.SetConfigType("yaml") // 如果配置文件的名称中没有扩展名，则需要配置此项
+viper.AddConfigPath("/etc/appname/")   // 查找配置文件所在的路径
+viper.AddConfigPath("$HOME/.appname")  // 多次调用以添加多个搜索路径
+viper.AddConfigPath(".")               // 还可以在工作目录中查找配置
+err := viper.ReadInConfig() // 查找并读取配置文件
+if err != nil { // 处理读取配置文件的错误
+	panic(fmt.Errorf("Fatal error config file: %s \n", err))
+}
+```
+
+在加载配置文件出错时，你可以像下面这样处理找不到配置文件的特定情况：
+
+```go
+if err := viper.ReadInConfig(); err != nil {
+    if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+        // 配置文件未找到错误；如果需要可以忽略
+    } else {
+        // 配置文件被找到，但产生了另外的错误
+    }
+}
+
+// 配置文件找到并成功解析
+```
+
+*注意[自1.6起]：* 你也可以有不带扩展名的文件，并以编程方式指定其格式。对于位于用户`$HOME`目录中的配置文件没有任何扩展名，如`.bashrc`。
+
+**这里补充两个问题供读者解答并自行验证**
+
+当你使用如下方式读取配置时，viper会从`./conf`目录下查找任何以`config`为文件名的配置文件，如果同时存在`./conf/config.json`和`./conf/config.yaml`两个配置文件的话，`viper`会从哪个配置文件加载配置呢？
+
+```go
+viper.SetConfigName("config")
+viper.AddConfigPath("./conf")
+```
+
+在上面两个语句下搭配使用`viper.SetConfigType("yaml")`指定配置文件类型可以实现预期的效果吗？
+
+#### 写入配置文件
+
+从配置文件中读取配置文件是有用的，但是有时你想要存储在运行时所做的所有修改。为此，可以使用下面一组命令，每个命令都有自己的用途:
+
+- WriteConfig - 将当前的`viper`配置写入预定义的路径并覆盖（如果存在的话）。如果没有预定义的路径，则报错。
+- SafeWriteConfig - 将当前的`viper`配置写入预定义的路径。如果没有预定义的路径，则报错。如果存在，将不会覆盖当前的配置文件。
+- WriteConfigAs - 将当前的`viper`配置写入给定的文件路径。将覆盖给定的文件(如果它存在的话)。
+- SafeWriteConfigAs - 将当前的`viper`配置写入给定的文件路径。不会覆盖给定的文件(如果它存在的话)。
+
+根据经验，标记为`safe`的所有方法都不会覆盖任何文件，而是直接创建（如果不存在），而默认行为是创建或截断。
+
+一个小示例：
+
+```go
+viper.WriteConfig() // 将当前配置写入“viper.AddConfigPath()”和“viper.SetConfigName”设置的预定义路径
+viper.SafeWriteConfig()
+viper.WriteConfigAs("/path/to/my/.config")
+viper.SafeWriteConfigAs("/path/to/my/.config") // 因为该配置文件写入过，所以会报错
+viper.SafeWriteConfigAs("/path/to/my/.other_config")
+```
+
+#### 监控并重新读取配置文件
+
+Viper支持在运行时实时读取配置文件的功能。
+
+需要重新启动服务器以使配置生效的日子已经一去不复返了，viper驱动的应用程序可以在运行时读取配置文件的更新，而不会错过任何消息。
+
+只需告诉viper实例watchConfig。可选地，你可以为Viper提供一个回调函数，以便在每次发生更改时运行。
+
+**确保在调用`WatchConfig()`之前添加了所有的配置路径。**
+
+```go
+viper.WatchConfig()
+viper.OnConfigChange(func(e fsnotify.Event) {
+  // 配置文件发生变更之后会调用的回调函数
+	fmt.Println("Config file changed:", e.Name)
+})
+```
+
+#### 从io.Reader读取配置
+
+Viper预先定义了许多配置源，如文件、环境变量、标志和远程K/V存储，但你不受其约束。你还可以实现自己所需的配置源并将其提供给viper。
+
+```go
+viper.SetConfigType("yaml") // 或者 viper.SetConfigType("YAML")
+
+// 任何需要将此配置添加到程序中的方法。
+var yamlExample = []byte(`
+Hacker: true
+name: steve
+hobbies:
+- skateboarding
+- snowboarding
+- go
+clothing:
+  jacket: leather
+  trousers: denim
+age: 35
+eyes : brown
+beard: true
+`)
+
+viper.ReadConfig(bytes.NewBuffer(yamlExample))
+
+viper.Get("name") // 这里会得到 "steve"
+```
+
+#### 覆盖设置
+
+这些可能来自命令行标志，也可能来自你自己的应用程序逻辑。
+
+```go
+viper.Set("Verbose", true)
+viper.Set("LogFile", LogFile)
+```
+
+#### 注册和使用别名
+
+别名允许多个键引用单个值
+
+```go
+viper.RegisterAlias("loud", "Verbose")  // 注册别名（此处loud和Verbose建立了别名）
+
+viper.Set("verbose", true) // 结果与下一行相同
+viper.Set("loud", true)   // 结果与前一行相同
+
+viper.GetBool("loud") // true
+viper.GetBool("verbose") // true
+```
+
+#### 使用环境变量
+
+Viper完全支持环境变量。这使`Twelve-Factor App`开箱即用。有五种方法可以帮助与ENV协作:
+
+- `AutomaticEnv()`
+- `BindEnv(string...) : error`
+- `SetEnvPrefix(string)`
+- `SetEnvKeyReplacer(string...) *strings.Replacer`
+- `AllowEmptyEnv(bool)`
+
+*使用ENV变量时，务必要意识到Viper将ENV变量视为区分大小写。*
+
+Viper提供了一种机制来确保ENV变量是惟一的。通过使用`SetEnvPrefix`，你可以告诉Viper在读取环境变量时使用前缀。`BindEnv`和`AutomaticEnv`都将使用这个前缀。
+
+`BindEnv`使用一个或两个参数。第一个参数是键名称，第二个是环境变量的名称。环境变量的名称区分大小写。如果没有提供ENV变量名，那么Viper将自动假设ENV变量与以下格式匹配：前缀+ “_” +键名全部大写。当你显式提供ENV变量名（第二个参数）时，它 **不会** 自动添加前缀。例如，如果第二个参数是“id”，Viper将查找环境变量“ID”。
+
+在使用ENV变量时，需要注意的一件重要事情是，每次访问该值时都将读取它。Viper在调用`BindEnv`时不固定该值。
+
+`AutomaticEnv`是一个强大的助手，尤其是与`SetEnvPrefix`结合使用时。调用时，Viper会在发出`viper.Get`请求时随时检查环境变量。它将应用以下规则。它将检查环境变量的名称是否与键匹配（如果设置了`EnvPrefix`）。
+
+`SetEnvKeyReplacer`允许你使用`strings.Replacer`对象在一定程度上重写 Env 键。如果你希望在`Get()`调用中使用`-`或者其他什么符号，但是环境变量里使用`_`分隔符，那么这个功能是非常有用的。可以在`viper_test.go`中找到它的使用示例。
+
+或者，你可以使用带有`NewWithOptions`工厂函数的`EnvKeyReplacer`。与`SetEnvKeyReplacer`不同，它接受`StringReplacer`接口，允许你编写自定义字符串替换逻辑。
+
+默认情况下，空环境变量被认为是未设置的，并将返回到下一个配置源。若要将空环境变量视为已设置，请使用`AllowEmptyEnv`方法。
+
+#### Env 示例：
+
+```go
+SetEnvPrefix("spf") // 将自动转为大写
+BindEnv("id")
+
+os.Setenv("SPF_ID", "13") // 通常是在应用程序之外完成的
+
+id := Get("id") // 13
+```
+
+#### 使用Flags
+
+Viper 具有绑定到标志的能力。具体来说，Viper支持[Cobra](https://github.com/spf13/cobra)库中使用的`Pflag`。
+
+与`BindEnv`类似，该值不是在调用绑定方法时设置的，而是在访问该方法时设置的。这意味着你可以根据需要尽早进行绑定，即使在`init()`函数中也是如此。
+
+对于单个标志，`BindPFlag()`方法提供此功能。
+
+例如：
+
+```go
+serverCmd.Flags().Int("port", 1138, "Port to run Application server on")
+viper.BindPFlag("port", serverCmd.Flags().Lookup("port"))
+```
+
+你还可以绑定一组现有的pflags （pflag.FlagSet）：
+
+举个例子：
+
+```go
+pflag.Int("flagname", 1234, "help message for flagname")
+
+pflag.Parse()
+viper.BindPFlags(pflag.CommandLine)
+
+i := viper.GetInt("flagname") // 从viper而不是从pflag检索值
+```
+
+在 Viper 中使用 pflag 并不阻碍其他包中使用标准库中的 flag 包。pflag 包可以通过导入这些 flags 来处理flag包定义的flags。这是通过调用pflag包提供的便利函数`AddGoFlagSet()`来实现的。
+
+例如：
+
+```go
+package main
+
+import (
+	"flag"
+	"github.com/spf13/pflag"
+)
+
+func main() {
+
+	// 使用标准库 "flag" 包
+	flag.Int("flagname", 1234, "help message for flagname")
+
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.Parse()
+	viper.BindPFlags(pflag.CommandLine)
+
+	i := viper.GetInt("flagname") // 从 viper 检索值
+
+	...
+}
+```
+
+#### flag接口
+
+如果你不使用`Pflag`，Viper 提供了两个Go接口来绑定其他 flag 系统。
+
+`FlagValue`表示单个flag。这是一个关于如何实现这个接口的非常简单的例子：
+
+```go
+type myFlag struct {}
+func (f myFlag) HasChanged() bool { return false }
+func (f myFlag) Name() string { return "my-flag-name" }
+func (f myFlag) ValueString() string { return "my-flag-value" }
+func (f myFlag) ValueType() string { return "string" }
+```
+
+一旦你的 flag 实现了这个接口，你可以很方便地告诉Viper绑定它：
+
+```go
+viper.BindFlagValue("my-flag-name", myFlag{})
+```
+
+`FlagValueSet`代表一组 flags 。这是一个关于如何实现这个接口的非常简单的例子:
+
+```go
+type myFlagSet struct {
+	flags []myFlag
+}
+
+func (f myFlagSet) VisitAll(fn func(FlagValue)) {
+	for _, flag := range flags {
+		fn(flag)
+	}
+}
+```
+
+一旦你的flag set实现了这个接口，你就可以很方便地告诉Viper绑定它：
+
+```go
+fSet := myFlagSet{
+	flags: []myFlag{myFlag{}, myFlag{}},
+}
+viper.BindFlagValues("my-flags", fSet)
+```
+
+#### 远程Key/Value存储支持
+
+在Viper中启用远程支持，需要在代码中匿名导入`viper/remote`这个包。
+
+```
+import _ "github.com/spf13/viper/remote"
+```
+
+Viper将读取从Key/Value存储（例如etcd或Consul）中的路径检索到的配置字符串（如`JSON`、`TOML`、`YAML`、`HCL`、`envfile`和`Java properties`格式）。这些值的优先级高于默认值，但是会被从磁盘、flag或环境变量检索到的配置值覆盖。（译注：也就是说Viper加载配置值的优先级为：磁盘上的配置文件>命令行标志位>环境变量>远程Key/Value存储>默认值。）
+
+Viper使用[crypt](https://github.com/bketelsen/crypt)从K/V存储中检索配置，这意味着如果你有正确的gpg密匙，你可以将配置值加密存储并自动解密。加密是可选的。
+
+你可以将远程配置与本地配置结合使用，也可以独立使用。
+
+`crypt`有一个命令行助手，你可以使用它将配置放入K/V存储中。`crypt`默认使用在[http://127.0.0.1:4001](http://127.0.0.1:4001/)的etcd。
+
+```bash
+$ go get github.com/bketelsen/crypt/bin/crypt
+$ crypt set -plaintext /config/hugo.json /Users/hugo/settings/config.json
+```
+
+确认值已经设置：
+
+```bash
+$ crypt get -plaintext /config/hugo.json
+```
+
+有关如何设置加密值或如何使用Consul的示例，请参见`crypt`文档。
+
+#### 远程Key/Value存储示例-未加密
+
+##### etcd
+
+```go
+viper.AddRemoteProvider("etcd", "http://127.0.0.1:4001","/config/hugo.json")
+viper.SetConfigType("json") // 因为在字节流中没有文件扩展名，所以这里需要设置下类型。支持的扩展名有 "json", "toml", "yaml", "yml", "properties", "props", "prop", "env", "dotenv"
+err := viper.ReadRemoteConfig()
+```
+
+##### Consul
+
+你需要 Consul Key/Value存储中设置一个Key保存包含所需配置的JSON值。例如，创建一个key`MY_CONSUL_KEY`将下面的值存入Consul key/value 存储：
+
+```json
+{
+    "port": 8080,
+    "hostname": "liwenzhou.com"
+}
+viper.AddRemoteProvider("consul", "localhost:8500", "MY_CONSUL_KEY")
+viper.SetConfigType("json") // 需要显示设置成json
+err := viper.ReadRemoteConfig()
+
+fmt.Println(viper.Get("port")) // 8080
+fmt.Println(viper.Get("hostname")) // liwenzhou.com
+```
+
+##### Firestore
+
+```go
+viper.AddRemoteProvider("firestore", "google-cloud-project-id", "collection/document")
+viper.SetConfigType("json") // 配置的格式: "json", "toml", "yaml", "yml"
+err := viper.ReadRemoteConfig()
+```
+
+当然，你也可以使用`SecureRemoteProvider`。
+
+#### 远程Key/Value存储示例-加密
+
+```go
+viper.AddSecureRemoteProvider("etcd","http://127.0.0.1:4001","/config/hugo.json","/etc/secrets/mykeyring.gpg")
+viper.SetConfigType("json") // 因为在字节流中没有文件扩展名，所以这里需要设置下类型。支持的扩展名有 "json", "toml", "yaml", "yml", "properties", "props", "prop", "env", "dotenv"
+err := viper.ReadRemoteConfig()
+```
+
+#### 监控etcd中的更改-未加密
+
+```go
+// 或者你可以创建一个新的viper实例
+var runtime_viper = viper.New()
+
+runtime_viper.AddRemoteProvider("etcd", "http://127.0.0.1:4001", "/config/hugo.yml")
+runtime_viper.SetConfigType("yaml") // 因为在字节流中没有文件扩展名，所以这里需要设置下类型。支持的扩展名有 "json", "toml", "yaml", "yml", "properties", "props", "prop", "env", "dotenv"
+
+// 第一次从远程读取配置
+err := runtime_viper.ReadRemoteConfig()
+
+// 反序列化
+runtime_viper.Unmarshal(&runtime_conf)
+
+// 开启一个单独的goroutine一直监控远端的变更
+go func(){
+	for {
+	    time.Sleep(time.Second * 5) // 每次请求后延迟一下
+
+	    // 目前只测试了etcd支持
+	    err := runtime_viper.WatchRemoteConfig()
+	    if err != nil {
+	        log.Errorf("unable to read remote config: %v", err)
+	        continue
+	    }
+
+	    // 将新配置反序列化到我们运行时的配置结构体中。你还可以借助channel实现一个通知系统更改的信号
+	    runtime_viper.Unmarshal(&runtime_conf)
+	}
+}()
+```
+
+### 从Viper获取值
+
+在Viper中，有几种方法可以根据值的类型获取值。存在以下功能和方法:
+
+- `Get(key string) : interface{}`
+- `GetBool(key string) : bool`
+- `GetFloat64(key string) : float64`
+- `GetInt(key string) : int`
+- `GetIntSlice(key string) : []int`
+- `GetString(key string) : string`
+- `GetStringMap(key string) : map[string]interface{}`
+- `GetStringMapString(key string) : map[string]string`
+- `GetStringSlice(key string) : []string`
+- `GetTime(key string) : time.Time`
+- `GetDuration(key string) : time.Duration`
+- `IsSet(key string) : bool`
+- `AllSettings() : map[string]interface{}`
+
+需要认识到的一件重要事情是，每一个Get方法在找不到值的时候都会返回零值。为了检查给定的键是否存在，提供了`IsSet()`方法。
+
+例如：
+
+```go
+viper.GetString("logfile") // 不区分大小写的设置和获取
+if viper.GetBool("verbose") {
+    fmt.Println("verbose enabled")
+}
+```
+
+#### 访问嵌套的键
+
+访问器方法也接受深度嵌套键的格式化路径。例如，如果加载下面的JSON文件：
+
+```json
+{
+    "host": {
+        "address": "localhost",
+        "port": 5799
+    },
+    "datastore": {
+        "metric": {
+            "host": "127.0.0.1",
+            "port": 3099
+        },
+        "warehouse": {
+            "host": "198.0.0.1",
+            "port": 2112
+        }
+    }
+}
+```
+
+Viper可以通过传入`.`分隔的路径来访问嵌套字段：
+
+```go
+GetString("datastore.metric.host") // (返回 "127.0.0.1")
+```
+
+这遵守上面建立的优先规则；搜索路径将遍历其余配置注册表，直到找到为止。(译注：因为Viper支持从多种配置来源，例如磁盘上的配置文件>命令行标志位>环境变量>远程Key/Value存储>默认值，我们在查找一个配置的时候如果在当前配置源中没找到，就会继续从后续的配置源查找，直到找到为止。)
+
+例如，在给定此配置文件的情况下，`datastore.metric.host`和`datastore.metric.port`均已定义（并且可以被覆盖）。如果另外在默认值中定义了`datastore.metric.protocol`，Viper也会找到它。
+
+然而，如果`datastore.metric`被直接赋值覆盖（被flag，环境变量，`set()`方法等等…），那么`datastore.metric`的所有子键都将变为未定义状态，它们被高优先级配置级别“遮蔽”（shadowed）了。
+
+最后，如果存在与分隔的键路径匹配的键，则返回其值。例如：
+
+```go
+{
+    "datastore.metric.host": "0.0.0.0",
+    "host": {
+        "address": "localhost",
+        "port": 5799
+    },
+    "datastore": {
+        "metric": {
+            "host": "127.0.0.1",
+            "port": 3099
+        },
+        "warehouse": {
+            "host": "198.0.0.1",
+            "port": 2112
+        }
+    }
+}
+
+GetString("datastore.metric.host") // 返回 "0.0.0.0"
+```
+
+#### 提取子树
+
+从Viper中提取子树。
+
+例如，`viper`实例现在代表了以下配置：
+
+```yaml
+app:
+  cache1:
+    max-items: 100
+    item-size: 64
+  cache2:
+    max-items: 200
+    item-size: 80
+```
+
+执行后：
+
+```go
+subv := viper.Sub("app.cache1")
+```
+
+`subv`现在就代表：
+
+```yaml
+max-items: 100
+item-size: 64
+```
+
+假设我们现在有这么一个函数：
+
+```go
+func NewCache(cfg *Viper) *Cache {...}
+```
+
+它基于`subv`格式的配置信息创建缓存。现在，可以轻松地分别创建这两个缓存，如下所示：
+
+```go
+cfg1 := viper.Sub("app.cache1")
+cache1 := NewCache(cfg1)
+
+cfg2 := viper.Sub("app.cache2")
+cache2 := NewCache(cfg2)
+```
+
+#### 反序列化
+
+你还可以选择将所有或特定的值解析到结构体、map等。
+
+有两种方法可以做到这一点：
+
+- `Unmarshal(rawVal interface{}) : error`
+- `UnmarshalKey(key string, rawVal interface{}) : error`
+
+举个例子：
+
+```go
+type config struct {
+	Port int
+	Name string
+	PathMap string `mapstructure:"path_map"`
+}
+
+var C config
+
+err := viper.Unmarshal(&C)
+if err != nil {
+	t.Fatalf("unable to decode into struct, %v", err)
+}
+```
+
+如果你想要解析那些键本身就包含`.`(默认的键分隔符）的配置，你需要修改分隔符：
+
+```go
+v := viper.NewWithOptions(viper.KeyDelimiter("::"))
+
+v.SetDefault("chart::values", map[string]interface{}{
+    "ingress": map[string]interface{}{
+        "annotations": map[string]interface{}{
+            "traefik.frontend.rule.type":"PathPrefix",
+            "traefik.ingress.kubernetes.io/ssl-redirect": "true",
+        },
+    },
+})
+
+type config struct {
+	Chart struct{
+        Values map[string]interface{}
+    }
+}
+
+var C config
+
+v.Unmarshal(&C)
+```
+
+Viper还支持解析到嵌入的结构体：
+
+```go
+/*
+Example config:
+
+module:
+    enabled: true
+    token: 89h3f98hbwf987h3f98wenf89ehf
+*/
+type config struct {
+	Module struct {
+		Enabled bool
+
+		moduleConfig `mapstructure:",squash"`
+	}
+}
+
+// moduleConfig could be in a module specific package
+type moduleConfig struct {
+	Token string
+}
+
+var C config
+
+err := viper.Unmarshal(&C)
+if err != nil {
+	t.Fatalf("unable to decode into struct, %v", err)
+}
+```
+
+Viper在后台使用[github.com/mitchellh/mapstructure](https://github.com/mitchellh/mapstructure)来解析值，其默认情况下使用`mapstructure`tag。
+
+**注意** 当我们需要将viper读取的配置反序列到我们定义的结构体变量中时，一定要使用`mapstructure`tag哦！
+
+#### 序列化成字符串
+
+你可能需要将viper中保存的所有设置序列化到一个字符串中，而不是将它们写入到一个文件中。你可以将自己喜欢的格式的序列化器与`AllSettings()`返回的配置一起使用。
+
+```go
+import (
+    yaml "gopkg.in/yaml.v2"
+    // ...
+)
+
+func yamlStringSettings() string {
+    c := viper.AllSettings()
+    bs, err := yaml.Marshal(c)
+    if err != nil {
+        log.Fatalf("unable to marshal config to YAML: %v", err)
+    }
+    return string(bs)
+}
+```
+
+### 使用单个还是多个Viper实例?
+
+Viper是开箱即用的。你不需要配置或初始化即可开始使用Viper。由于大多数应用程序都希望使用单个中央存储库管理它们的配置信息，所以viper包提供了这个功能。它类似于单例模式。
+
+在上面的所有示例中，它们都以其单例风格的方法演示了如何使用viper。
+
+#### 使用多个viper实例
+
+你还可以在应用程序中创建许多不同的viper实例。每个都有自己独特的一组配置和值。每个人都可以从不同的配置文件，key value存储区等读取数据。每个都可以从不同的配置文件、键值存储等中读取。viper包支持的所有功能都被镜像为viper实例的方法。
+
+例如：
+
+```go
+x := viper.New()
+y := viper.New()
+
+x.SetDefault("ContentDir", "content")
+y.SetDefault("ContentDir", "foobar")
+
+//...
+```
+
+当使用多个viper实例时，由用户来管理不同的viper实例。
+
+### 使用Viper示例
+
+假设我们的项目现在有一个`./conf/config.yaml`配置文件，内容如下：
+
+```yaml
+port: 8123
+version: "v1.2.3"
+```
+
+接下来通过示例代码演示两种在项目中使用`viper`管理项目配置信息的方式。
+
+#### 直接使用viper管理配置
+
+这里用一个demo演示如何在gin框架搭建的web项目中使用`viper`，使用viper加载配置文件中的信息，并在代码中直接使用`viper.GetXXX()`方法获取对应的配置值。
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
+)
+
+func main() {
+	viper.SetConfigFile("./conf/config.yaml") // 指定配置文件路径
+	err := viper.ReadInConfig()        // 读取配置信息
+	if err != nil {                    // 读取配置信息失败
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+
+	// 监控配置文件变化
+	viper.WatchConfig()
+
+	r := gin.Default()
+	// 访问/version的返回值会随配置文件的变化而变化
+	r.GET("/version", func(c *gin.Context) {
+		c.String(http.StatusOK, viper.GetString("version"))
+	})
+
+	if err := r.Run(
+		fmt.Sprintf(":%d", viper.GetInt("port"))); err != nil {
+		panic(err)
+	}
+}
+```
+
+#### 使用结构体变量保存配置信息
+
+除了上面的用法外，我们还可以在项目中定义与配置文件对应的结构体，`viper`加载完配置信息后使用结构体变量保存配置信息。
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/fsnotify/fsnotify"
+
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	Port    int    `mapstructure:"port"`
+	Version string `mapstructure:"version"`
+}
+
+var Conf = new(Config)
+
+func main() {
+	viper.SetConfigFile("./conf/config.yaml") // 指定配置文件路径
+	err := viper.ReadInConfig()               // 读取配置信息
+	if err != nil {                           // 读取配置信息失败
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+	// 将读取的配置信息保存至全局变量Conf
+	if err := viper.Unmarshal(Conf); err != nil {
+		panic(fmt.Errorf("unmarshal conf failed, err:%s \n", err))
+	}
+	// 监控配置文件变化
+	viper.WatchConfig()
+	// 注意！！！配置文件发生变化后要同步到全局变量Conf
+	viper.OnConfigChange(func(in fsnotify.Event) {
+		fmt.Println("夭寿啦~配置文件被人修改啦...")
+		if err := viper.Unmarshal(Conf); err != nil {
+			panic(fmt.Errorf("unmarshal conf failed, err:%s \n", err))
+		}
+	})
+
+	r := gin.Default()
+	// 访问/version的返回值会随配置文件的变化而变化
+	r.GET("/version", func(c *gin.Context) {
+		c.String(http.StatusOK, Conf.Version)
+	})
+
+	if err := r.Run(fmt.Sprintf(":%d", Conf.Port)); err != nil {
+		panic(err)
+	}
+}
+```
+
+**参考链接：**https://github.com/spf13/viper/blob/master/README.md
+
+## 优雅关机和重启
+
+我们编写的Web项目部署之后，经常会因为需要进行配置变更或功能迭代而重启服务，单纯的`kill -9 pid`的方式会强制关闭进程，这样就会导致服务端当前正在处理的请求失败，那有没有更优雅的方式来实现关机或重启呢？
+
+> 阅读本文需要了解一些UNIX系统中`信号`的概念，请提前查阅资料预习。
+
+### 优雅地关机
+
+#### 什么是优雅关机？
+
+优雅关机就是服务端关机命令发出后不是立即关机，而是等待当前还在处理的请求全部处理完毕后再退出程序，是一种对客户端友好的关机方式。而执行`Ctrl+C`关闭服务端时，会强制结束进程导致正在访问的请求出现问题。
+
+#### 如何实现优雅关机？
+
+Go 1.8版本之后， http.Server 内置的 [Shutdown()](https://golang.org/pkg/net/http/#Server.Shutdown) 方法就支持优雅地关机，具体示例如下：
+
+```go
+// +build go1.8
+
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	router := gin.Default()
+	router.GET("/", func(c *gin.Context) {
+		time.Sleep(5 * time.Second)
+		c.String(http.StatusOK, "Welcome Gin Server")
+	})
+
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+
+	go func() {
+		// 开启一个goroutine启动服务
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// 等待中断信号来优雅地关闭服务器，为关闭服务器操作设置一个5秒的超时
+	quit := make(chan os.Signal, 1) // 创建一个接收信号的通道
+	// kill 默认会发送 syscall.SIGTERM 信号
+	// kill -2 发送 syscall.SIGINT 信号，我们常用的Ctrl+C就是触发系统SIGINT信号
+	// kill -9 发送 syscall.SIGKILL 信号，但是不能被捕获，所以不需要添加它
+	// signal.Notify把收到的 syscall.SIGINT或syscall.SIGTERM 信号转发给quit
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)  // 此处不会阻塞
+	<-quit  // 阻塞在此，当接收到上述两种信号时才会往下执行
+	log.Println("Shutdown Server ...")
+	// 创建一个5秒超时的context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// 5秒内优雅关闭服务（将未处理完的请求处理完再关闭服务），超过5秒就超时退出
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server Shutdown: ", err)
+	}
+
+	log.Println("Server exiting")
+}
+```
+
+如何验证优雅关机的效果呢？
+
+上面的代码运行后会在本地的`8080`端口开启一个web服务，它只注册了一条路由`/`，后端服务会先sleep 5秒钟然后才返回响应信息。
+
+我们按下`Ctrl+C`时会发送`syscall.SIGINT`来通知程序优雅关机，具体做法如下：
+
+1. 打开终端，编译并执行上面的代码
+2. 打开一个浏览器，访问`127.0.0.1:8080/`，此时浏览器白屏等待服务端返回响应。
+3. 在终端**迅速**执行`Ctrl+C`命令给程序发送`syscall.SIGINT`信号
+4. 此时程序并不立即退出而是等我们第2步的响应返回之后再退出，从而实现优雅关机。
+
+### 优雅地重启
+
+优雅关机实现了，那么该如何实现优雅重启呢？
+
+我们可以使用 [fvbock/endless](https://github.com/fvbock/endless) 来替换默认的 `ListenAndServe`启动服务来实现， 示例代码如下：
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/fvbock/endless"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	router := gin.Default()
+	router.GET("/", func(c *gin.Context) {
+		time.Sleep(5 * time.Second)
+		c.String(http.StatusOK, "hello gin!")
+	})
+	// 默认endless服务器会监听下列信号：
+	// syscall.SIGHUP，syscall.SIGUSR1，syscall.SIGUSR2，syscall.SIGINT，syscall.SIGTERM和syscall.SIGTSTP
+	// 接收到 SIGHUP 信号将触发`fork/restart` 实现优雅重启（kill -1 pid会发送SIGHUP信号）
+	// 接收到 syscall.SIGINT或syscall.SIGTERM 信号将触发优雅关机
+	// 接收到 SIGUSR2 信号将触发HammerTime
+	// SIGUSR1 和 SIGTSTP 被用来触发一些用户自定义的hook函数
+	if err := endless.ListenAndServe(":8080", router); err!=nil{
+		log.Fatalf("listen: %s\n", err)
+	}
+
+	log.Println("Server exiting")
+}
+```
+
+如何验证优雅重启的效果呢？
+
+我们通过执行`kill -1 pid`命令发送`syscall.SIGINT`来通知程序优雅重启，具体做法如下：
+
+1. 打开终端，`go build -o graceful_restart`编译并执行`./graceful_restart`,终端输出当前pid(假设为43682)
+2. 将代码中处理请求函数返回的`hello gin!`修改为`hello q1mi!`，再次编译`go build -o graceful_restart`
+3. 打开一个浏览器，访问`127.0.0.1:8080/`，此时浏览器白屏等待服务端返回响应。
+4. 在终端**迅速**执行`kill -1 43682`命令给程序发送`syscall.SIGHUP`信号
+5. 等第3步浏览器收到响应信息`hello gin!`后再次访问`127.0.0.1:8080/`会收到`hello q1mi!`的响应。
+6. 在不影响当前未处理完请求的同时完成了程序代码的替换，实现了优雅重启。
+
+但是需要注意的是，此时程序的PID变化了，因为`endless` 是通过`fork`子进程处理新请求，待原进程处理完当前请求后再退出的方式实现优雅重启的。所以当你的项目是使用类似`supervisor`的软件管理进程时就**不适用**这种方式了。
+
+### 总结
+
+无论是优雅关机还是优雅重启归根结底都是通过监听特定系统信号，然后执行一定的逻辑处理保障当前系统正在处理的请求被正常处理后再关闭当前进程。使用优雅关机还是使用优雅重启以及怎么实现，这就需要根据项目实际情况来决定了。
