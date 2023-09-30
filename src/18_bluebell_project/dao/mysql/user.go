@@ -44,11 +44,10 @@ func encryptPassword(originPassword string) string {
 }
 
 // CheckUserPassword 验证用户名和密码是否正确
-func CheckUserPassword(username string, password string) (b bool, err error) {
-	var user models.User
-	password = encryptPassword(password) // 对输入的密码进行加密转换
-	sqlStr := "select username,password from user where username=?"
-	if err := db.Get(&user, sqlStr, username); err != nil { // 将查询结果存入结构体变量中
+func CheckUserPassword(user *models.User) (b bool, err error) {
+	password := encryptPassword(user.PassWord) // 对输入的密码进行加密转换
+	sqlStr := "select user_id,username,password from user where username=?"
+	if err := db.Get(user, sqlStr, user.UserName); err != nil { // 将查询结果存入原结构体变量user中。（注意：这里的user已经是指针类型了，在传入的时候不需要再取址）
 		return false, err
 	}
 	return user.PassWord == password, nil
