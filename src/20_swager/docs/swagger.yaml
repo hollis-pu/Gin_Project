@@ -1,0 +1,76 @@
+basePath: /api/v1
+definitions:
+  controller._ResponseData:
+    properties:
+      code:
+        description: 状态码
+        type: integer
+      data:
+        description: 数据
+      msg:
+        description: 状态信息
+        type: string
+    type: object
+  controller.ParamLogin:
+    properties:
+      password:
+        example: "123456"
+        type: string
+      username:
+        example: test
+        type: string
+    required:
+    - password
+    - username
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: 这里写联系人信息
+    url: http://www.swagger.io/support
+  description: 这里写描述信息
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Swagger接口文档
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: 用户登录
+      parameters:
+      - description: 用户名和密码
+        in: body
+        name: Login
+        schema:
+          $ref: '#/definitions/controller.ParamLogin'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller._ResponseData'
+      summary: 用户登录
+      tags:
+      - User
+  /ping:
+    get:
+      consumes:
+      - application/json
+      description: 测试网站是否能够正常访问
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller._ResponseData'
+      summary: Ping
+      tags:
+      - 测试
+swagger: "2.0"
