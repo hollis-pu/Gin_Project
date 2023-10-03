@@ -4050,12 +4050,16 @@ Viper需要最少知道在哪里查找配置文件的配置。Viper支持`JSON`�
 下面是一个如何使用Viper搜索和读取配置文件的示例。不需要任何特定的路径，但是至少应该提供一个配置文件预期出现的路径。
 
 ```go
+// 方式1：
 viper.SetConfigFile("./config.yaml") // 指定配置文件路径
-viper.SetConfigName("config") // 配置文件名称(无扩展名)
-viper.SetConfigType("yaml") // 如果配置文件的名称中没有扩展名，则需要配置此项
-viper.AddConfigPath("/etc/appname/")   // 查找配置文件所在的路径
-viper.AddConfigPath("$HOME/.appname")  // 多次调用以添加多个搜索路径
-viper.AddConfigPath(".")               // 还可以在工作目录中查找配置
+// 方式2：
+// viper.SetConfigName("config") // 配置文件名称(无扩展名)（当存在多个同名但不同类型的配置文件时，可能导致异常）
+// viper.AddConfigPath("/etc/appname/")   // 查找配置文件所在的路径
+// viper.AddConfigPath("$HOME/.appname")  // 多次调用以添加多个搜索路径
+// viper.AddConfigPath(".")               // 还可以在工作目录中查找配置
+
+viper.SetConfigType("yaml") // 基本上是配合远程配置中心使用的，告诉viper当前的数据使用的是什么格式去解析
+
 err := viper.ReadInConfig() // 查找并读取配置文件
 if err != nil { // 处理读取配置文件的错误
 	panic(fmt.Errorf("Fatal error config file: %s \n", err))
@@ -4929,3 +4933,1034 @@ func main() {
 ### 总结
 
 无论是优雅关机还是优雅重启归根结底都是通过监听特定系统信号，然后执行一定的逻辑处理保障当前系统正在处理的请求被正常处理后再关闭当前进程。使用优雅关机还是使用优雅重启以及怎么实现，这就需要根据项目实际情况来决定了。
+
+## 雪花算法
+
+2023.09.29
+
+### 介绍
+
+雪花算法（Snowflake Algorithm）是一种用于生成分布式唯一ID的算法，最初由Twitter开发并开源。这个算法的目标是在分布式系统中生成全局唯一的ID，同时保持ID的趋势递增，以提高数据库索引性能。雪花算法生成的ID通常是64位长的整数，可以分为以下各个部分：
+
+<img src="Gin框架学习笔记.assets/image-20230929112533853.png" alt="image-20230929112533853" style="zoom: 50%;" />
+
+1. **第一位** 占用1bit，其值始终是0，没有实际作用。
+
+2. **时间戳** 占用41bit，单位为毫秒，总共可以容纳约69年的时间。当然，我们的时间毫秒计数不会真的从1970年开始记，那样我们的系统跑到 `2039/9/7 23:7:35` 就不能用了，所以这里的时间戳只是相对于某个时间的增量，比如我们的系统上线是2020-07-01，那么我们完全可以把这个timestamp当作是从`2020-07-01 00:00:00.000`的偏移量。
+
+3. **工作机器id** 占用10bit，其中高位5bit是数据中心ID，低位5bit是工作节点ID，最多可以容纳1024个节点。
+4. **序列号** 占用12bit，用来记录同毫秒内产生的不同id。每个节点每毫秒0开始不断累加，最多可以累加到4095，同一毫秒一共可以产生4096个ID。
+
+SnowFlake算法在同一毫秒内最多可以生成多少个全局唯一ID呢？
+
+**同一毫秒的ID数量=1024 X4096=4194304**
+
+生成Snowflake ID的过程通常是线程安全的，因为它主要依赖于时间戳，但需要确保在同一毫秒内不会生成超过序列号允许的最大数量的ID。
+
+需要注意的是，由于时间戳在高位，所以生成的ID趋势递增，这有助于提高数据库索引性能。
+
+最后，需要根据具体的需求和系统架构来调整雪花算法的参数，以确保在分布式系统中生成的ID的唯一性和趋势递增。
+
+### snowflake的Go实现
+
+**1.bwmarrin/snowflake** 
+
+https://github.com/bwmarrin/snowflake 是一个相当轻量化的snowflake的Go实现。
+
+Snowflake 是一个[Go](https://golang.org/)包，提供
+
+- 一个非常简单的 Twitter 雪花生成器。
+- 解析现有雪花 ID 的方法。
+- 将雪花 ID 转换为多种其他数据类型并返回的方法。
+- JSON Marshal/Unmarshal 函数可在 JSON API 中轻松使用雪花 ID。
+- 单调时钟计算可防止时钟漂移。
+
+| 1 Bit Unused | 41 Bit Timestamp | 10 Bit NodeID |12 Bit Sequence ID|
+| :----------: | :--: | :--: |:-:|
+
+支持动态的调整每一个因子所占的位数。
+
+示例：
+
+```go
+package main
+
+import (
+    "fmt"
+    sf "github.com/bwmarrin/snowflake"
+    "time"
+)
+
+var node *sf.Node
+
+func Init(startTime string, machineID int64) (err error) {
+    var st time.Time
+    st, err = time.Parse("2006-01-02", startTime)
+    if err != nil {
+       return
+    }
+    sf.Epoch = st.UnixNano() / 1000000
+    node, err = sf.NewNode(machineID)
+    return
+}
+
+func GenID() int64 {
+    return node.Generate().Int64()
+}
+func main() {
+    if err := Init("2020-07-01", 1); err != nil {
+       fmt.Printf("init failed, err:%v\n", err)
+       return
+    }
+    for i := 0; i < 100; i++ {  // 生成100个ID
+       id := GenID()
+       fmt.Println(id)
+    }
+}
+```
+
+**2.sony/sonyflake**
+
+https://github.com/sony/sonyflake 是Sony公司的一个开源项目，基本思路和snowflake差不多，不过位分配上稍有不同：
+
+| 1 Bit Unused | 39 Bit Timestamp | 8 Bit Sequence ID | 16 Bit NodeID |
+| :----------: | :--------------: | :---------------: | :-----------: |
+
+这里的时间只用了39个bit，但时间的单位变成了10ms，所以理论上比41位表示的时间还要久(174年)。`Sequence ID`和之前的定义一致，`Machine ID` 其实就是节点id。`sonyflake`库有以下配置参数：
+
+```go
+type Settings struct {
+    StartTime      time.Time
+    MachineID      func() (uint16, error)
+    CheckMachineID func(uint16) bool
+}
+```
+
+这是系统定义好的结构体，我们只需要给结构体变量赋值即可。
+
+其中:
+
+- `StartTime` 选项和我们之前的 `Epoch` 差不多，如果不设置的话，默认是从`2014-09-01 00:00:00 +0000 UTC`开始。
+- `MachineID`可以由用户自定义的函数，如果用户不定义的话，会默认将本机IP的低16位作为`machine id`。
+- `CheckMachineID`是由用户提供的检查`MachineD`是否冲突的函数。
+
+示例：
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sony/sonyflake"
+    "time"
+)
+
+var (
+    sonyFlake     *sonyflake.Sonyflake
+    sonyMachineID uint16
+)
+
+func getMachineID() (uint16, error) {
+    return sonyMachineID, nil
+}
+
+// Init02 需传入当前的机器ID
+func Init02(startTime string, machineId uint16) (err error) {
+    sonyMachineID = machineId
+    var st time.Time
+    st, err = time.Parse("2006-01-02", startTime)
+    if err != nil {
+       return err
+    }
+    settings := sonyflake.Settings{
+       StartTime: st,
+       MachineID: getMachineID,
+    }
+    sonyFlake = sonyflake.NewSonyflake(settings)
+    return
+}
+func GenID02() (id uint64, err error) {
+    if sonyFlake == nil {
+       err = fmt.Errorf("snoy flake not inited")
+       return
+    }
+    id, err = sonyFlake.NextID() // 生成新的id
+    return
+}
+
+func main() {
+    if err := Init02("2020-07-01", 1); err != nil {
+       fmt.Printf("Init failed, err:%v\n", err)
+       return
+    }
+    for i := 0; i < 100; i++ {
+       id, _ := GenID02()
+       fmt.Println(id)
+    }
+}
+```
+
+## validator库
+
+### 介绍
+
+在Go语言中，有一个叫做"validator"的库，用于数据验证和验证结构体字段。这个库的主要作用是帮助开发人员验证输入的数据是否符合预期的格式和要求，通常用于Web应用程序中的表单验证、API参数验证等场景。下面是关于Go语言中的"validator"库的详细介绍：
+
+1. **库名称和导入**：Go语言中最常用的验证库是"github.com/go-playground/validator/v10"。你可以使用Go模块来导入它，通常导入的方式如下：
+
+   ```go
+   import "github.com/go-playground/validator/v10"
+   ```
+
+2. **基本使用**：以下是"validator"库的基本使用步骤：
+
+   a. 创建一个验证器实例：
+
+      ```go
+      validate := validator.New()
+      ```
+
+   b. 定义一个结构体来表示要验证的数据，并使用标签来定义每个字段的验证规则。例如：
+
+      ```go
+      type User struct {
+          Username  string `validate:"required,min=3,max=20"`
+          Email     string `validate:"required,email"`
+          Age       int    `validate:"gte=0,lte=150"`
+      }
+      ```
+
+   c. 使用验证器来验证结构体实例：
+
+      ```go
+      user := User{
+          Username: "john_doe",
+          Email:    "john@example.com",
+          Age:      30,
+      }
+
+      err := validate.Struct(user)
+      if err != nil {
+          // 处理验证错误
+      }
+      ```
+
+3. **内置验证标签**："validator"库提供了许多内置的验证标签，例如：
+
+   - `required`：字段不能为空。
+   - `min` 和 `max`：指定字段的最小和最大长度或值。
+   - `email`：验证邮箱地址的格式。
+   - `gte` 和 `lte`：字段必须大于或等于某个值，或小于或等于某个值。
+
+4. **自定义验证规则**：你可以轻松地定义自己的自定义验证规则。例如，如果要验证字段是否为特定值，可以创建自定义验证函数并将其应用于字段。
+
+   ```go
+   func isCountryCode(fl validator.FieldLevel) bool {
+       countryCode := fl.Field().String()
+       return countryCode == "US" || countryCode == "CA" || countryCode == "UK"
+   }
+
+   type Address struct {
+       CountryCode string `validate:"required,country_code"`
+   }
+
+   validate.RegisterValidation("country_code", isCountryCode)
+   ```
+
+5. **错误处理**：如果验证失败，"validator"库会返回一个包含错误信息的结构体，你可以从中提取验证错误并采取适当的措施。
+
+   ```go
+   if err != nil {
+       for _, err := range err.(validator.ValidationErrors) {
+           // 处理每个验证错误
+           fmt.Println(err.Field(), err.Tag(), err.Param())
+       }
+   }
+   ```
+
+6. **标签定制**：你可以使用标签中的参数来自定义错误消息。例如：
+
+   ```go
+   type User struct {
+       Username  string `validate:"required,min=3,max=20"`
+   }
+   ```
+
+   在这个示例中，你可以使用参数为`min`和`max`的自定义错误消息来覆盖默认的错误消息。
+
+"validator"库是一个强大的数据验证工具，能够帮助你确保应用程序接收到符合预期格式和规则的输入数据。你可以根据项目的需求和验证场景来定义验证规则，从而提高应用程序的健壮性和可靠性。请注意，上述示例是一个简化版本，实际应用中可能需要更复杂的验证逻辑和自定义规则。
+
+## 用户认证
+
+HTTP 是一个无状态的协议，一次请求结束后，下次在发送服务器就不知道这个请求是谁发来的了 (同个IP 不代表同一个用户)，在 Web 应用中，用户的认证和鉴权是非常重要的一环，实践中有多种可用方案，并且各有千秋。
+
+### Cookie- Session认证模式
+
+在Web 应用发展的初期，大部分采用基于Cookie-Session 的会话管理方式，逻辑如下：
+
+- 客户端使用用户名、密码进行认证；
+- 服务端验证用户名、密码正确后生成并存储 Session，将 SessionlD 通过 Cookie 返回给客户端客户端访问；
+- 要认证的接口时在 Cookie 中携带 SessionlD；
+- 服务端通过 SessionID 查找 Session 并进行鉴权，返回给客户端需要的数据。
+
+**基于Session的方式存在多种问题：**
+
+- 服务端需要存储 Session，并且由于 Session 需要经常快速查找，通常存储在内存或内存数据库中，同时在线用户较多时需要占用大量的服务器资源。
+- 当需要扩展时，创建 Session 的服务器可能不是验证 Session 的服务器，所以还需要将所有Session 单独存储并共享。
+- 由于客户端使用 Cookie 存储 SessionID，在跨域场景下需要进行兼容性处理，同时这种方式也难以防范 CSRF 攻击。
+
+### Token 认证模式
+
+鉴于基于 Session 的会话管理方式存在上述多个缺点，基于 Token 的无状态会话管理方式诞生了，所谓无状态，就是服务端可以不再存储信息，甚至是不再存储 Session，逻辑如下：
+
+- 客户端使用用户名、密码进行认证；
+- 服务端验证用户名、密码正确后生成 Token 返回给客户端；
+- 客户端保存Token，访问需要认证的接口时在URL 参数或 HTTP Header 中加入 Token；
+- 服务端通过解码 Token 进行鉴权，返回给客户端需要的数据。
+
+基于Token的会话管理方式有效解决了基于Session 的会话管理方式带来的问题。
+
+- 服务端不需要存储和用户鉴权有关的信息，鉴权信息会被加密到 Token 中，服务端只需要读取Token 中包含的鉴权信息即可；
+- 避免了共享Session 导致的不易扩展问题；
+- 不需要依赖 Cookie，有效避免 Cookie 带来的 CSRF 攻击问题；
+- 使用CORS可以快速解决跨域问题。
+
+### JWT
+
+#### 介绍
+
+WT是JSON Web Token 的缩写，是为了在网络应用环境间传递声明而执行的一种基于ISON的开放标准((RFC 7519)。JWT 本身没有定义任何技术实现，它只是定义了一种基于 Token 的会话管理的规则，涵盖Token 需要包含的标准内容和 Token 的生成过程，特别适用于分布式站点的单点登录 (SSO)场景。
+
+一个JWT Token 就像这样:
+
+```
+eyJhbGci0iJIUzI1NiIsInR5cCI6IkpxVCJ9.eyJc2Vyx21kIjoyODAxODcyNz040DMyMzU4NSwizXhwIjoxNTkGNTQwMjkxLCJpc3Mi0iJibHVlYmVsbcJ9.lk_ZrAtYGCeZhk3iupHxP1kgjBJzQTVTtX0iZYFx9wU
+```
+
+它是由`.`分隔的三部分组成，这三部分依次是:
+
+- 头部 (Header)
+- 负载 (Payload)
+- 签名 (Signature)
+
+头部和负载以JSON 形式存在，这就是JWT 中的JSON，三部分的内容都分别单独经过了 Base64编码，以`.`拼接成一个 JWT Token。
+
+#### Header
+
+JWT的 Header 中存储了所使用的加密算法和 Token 类型。
+
+```json
+{
+    "alg":"HS256",
+	"typ":"JWT"
+}
+```
+
+#### Payload
+
+Payload 表示负载，也是一个JSON 对象，JWT 规定了7个官方字段供选用：
+
+```json
+iss (issuer): 签发人
+exp (expiration time): 过期时间
+sub (subject): 主题
+aud (audience): 受众
+nbf (Not Before): 生效时间
+iat (Issued At): 签发时间
+jti (JWT ID): 编号
+```
+
+除了官方字段，开发者也可以自己指定字段和内容，例如下面的内容：
+
+```json
+{
+    "sub": "1234567890",
+	"name": "John Doe",
+	"admin": true
+}
+```
+
+注意，JWT 默认是不加密的，任何人都可以读到，所以不要把秘密信息放在这个部分。这个JSON 对象也要使用 Base64URL 算法转成字符串。
+
+#### Signature
+
+Signature 部分是对前两部分的签名，防止数据篡改。
+首先，需要指定一个密钥 (secret) 。这个密钥只有服务器才知道，不能泄露给用户。然后，使用Header 里面指定的签名算法 (默认是HMACSHA256)，按照下面的公式产生签名。
+
+```json
+HMACSHA256(base64UrlEncode(header) + "."+ base64UrlEncode(payload),secret)
+```
+
+#### JWT优缺点
+
+JWT 拥有基于 Token 的会话管理方式所拥有的一切优势，不依赖 Cookie，使得其可以防止 CSRF 攻击，也能在禁用 Cookie 的浏览器环境中正常运行。
+而 JWT 的最大优势是服务端不再需要存储 Session，使得服务端认证鉴权业务可以方便扩展，避免存储 Session 所需要引入的 Redis 等组件，降低了系统架构复杂度。但这也是 JWT 最大的劣势，由于有效期存储在 Token 中，JWT Token 一旦签发，就会在有效期内一直可用，无法在服务端废止，当用户进行登出操作，只能依赖客户端删除掉本地存储的 JWT Tken，如果需要禁用用户，单纯使用 JWT 就无法做到。
+
+### 基于Jwt实现认证实践
+
+2023.09.30
+
+前面讲的 Token，都是Access Token，也就是访问资源接口时所需要的 Token，还有另外一种Token，Refresh Token，通常情况下，Refresh Token 的有效期会比较长，而Access Token 的有效期比较短，当Access Token 由于过期而失效时，使用 Refresh Token 就可以获取到新的 Access Token,如果 Refresh Token 也失效了，用户就只能重新登录了。
+在JWT 的实践中，引入 Refresh Token，将会话管理流程改进如下：
+
+- 客户端使用用户名密码进行认证；
+- 服务端生成有效时间较短的Access Token (例如10分钟)，和有效时间较长的 RefreshToken (例如 7天)；
+- 客户端访问需要认证的接口时，携带 Access Token；
+- 如果Access Token 没有过期，服务端鉴权后返回给客户端需要的数据；
+- 如果携带 Acess Token 访问需要认证的接口时鉴权失败 (例如返回401 错误)，则客户端使用Refresh Token 向刷新接口申请新的 Access Token；
+- 如果 Refresh Token 没有过期，服务端向客户端下发新的 Access Token；
+- 客户端使用新的Access Token 访问需要认证的接口。
+
+**生成access token和refresh token**
+
+```go
+func GenToken(userID int64) (aToken, rToken string, err error) {
+    // 创建⼀个我们⾃⼰的声明
+    c := MyClaims{
+       userID, // ⾃定义字段
+       jwt.StandardClaims{
+          ExpiresAt: time.Now().Add(TokenExpireDuration).Unix(), // 过期时间
+          Issuer: "bluebell", // 签发⼈
+       },
+    }
+    // 加密并获得完整的编码后的字符串token
+    aToken, err = jwt.NewWithClaims(jwt.SigningMethodHS256,
+       c).SignedString(mySecret)
+    // refresh token 不需要存任何⾃定义数据
+    rToken, err = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
+       ExpiresAt: time.Now().Add(time.Second * 30).Unix(), // 过期时间
+       Issuer: "bluebell", // 签发⼈
+    }).SignedString(mySecret)
+    // 使⽤指定的secret签名并获得完整的编码后的字符串token
+    return
+}
+```
+
+**解析access token**
+
+```go
+// ParseToken 解析JWT
+func ParseToken(tokenString string) (claims *MyClaims, err error) {
+    // 解析token
+    var token *jwt.Token
+    claims = new(MyClaims)
+    token, err = jwt.ParseWithClaims(tokenString, claims, keyFunc)
+    if err != nil {
+       return
+    }
+    if !token.Valid { // 校验token
+       err = errors.New("invalid token")
+    }
+    return
+}
+```
+
+**刷新AccessToken**
+
+```go
+// RefreshToken 刷新AccessToken
+func RefreshToken(aToken, rToken string) (newAToken, newRToken string, err
+error) {
+	// refresh token无效直接返回
+    if _, err = jwt.Parse(rToken, keyFunc); err != nil {
+        return
+	}
+    // 从旧access token中解析出claims数据
+    var claims MyClaims
+    _, err = jwt.ParseWithClaims(aToken, &claims, keyFunc)
+    v, _ := err.(*jwt.ValidationError)
+    // 当access token是过期错误 并且 refresh token没有过期时就创建⼀个新的access token和refresh token（这里可以自主选择是否生成新的refresh token）
+    if v.Errors == jwt.ValidationErrorExpired {
+        return GenToken(claims.UserID)
+    }
+    return
+}
+```
+
+如果不想自己实现上述功能，你也可以使用Github上别人封装好的包，比如：https://github.com/appleboy/gin-jwt。
+
+参考： [RFC 6749 OAuth2.0中关于refresh token的介绍](https://datatracker.ietf.org/doc/html/rfc6749#section-1.5)
+
+http://www.ruanyifeng.com/blog/2018/07/json_web_token-tutorial.html
+
+https://www.jianshu.com/p/25ab2f456904
+
+## air实时热重载
+
+要在 Go 语言程序中使用 `air` 库实现实时热重载，你可以按照以下步骤操作：
+
+1. **安装 `air` 工具**：首先，你需要安装 `air` 工具，它是一个用于 Go 应用程序热重载的命令行工具。你可以使用以下命令安装：
+
+   ```bash
+   go get -u github.com/cosmtrek/air
+   ```
+
+   注意：在windows系统下，需要使用`go env GOPATH`查看GoPath路径，然后切换到该路径下，执行`go install github.com/cosmtrek/air@latest`命令，来安装`air`（会生成一个`bin`目录，里面存放`air.exe`文件）。
+
+2. **创建 `air` 配置文件**：在你的项目根目录下创建一个名为 `.air.toml` 的配置文件，用于配置 `air` 工具。以下是一个示例配置文件：
+
+   ```toml
+   # .air.toml
+   # [Air](https://github.com/cosmtrek/air) TOML 格式的配置文件
+   
+   # 工作目录
+   # 使用 . 或绝对路径，请注意 `tmp_dir` 目录必须在 `root` 目录下
+   root = "."
+   tmp_dir = "tmp"
+   
+   [build]
+   # 只需要写你平常编译使用的shell命令。你也可以使用 `make`
+   # Windows平台示例: cmd = "go build -o tmp\main.exe ."
+   cmd = "go build -o ./tmp/main ."
+   # 由`cmd`命令得到的二进制文件名
+   # Windows平台示例：bin = "tmp\main.exe"
+   bin = "tmp/main"
+   # 自定义执行程序的命令，可以添加额外的编译标识例如添加 GIN_MODE=release
+   # Windows平台示例：full_bin = "tmp\main.exe"
+   full_bin = "APP_ENV=dev APP_USER=air ./tmp/main"
+   # 监听以下文件扩展名的文件.
+   include_ext = ["go", "tpl", "tmpl", "html"]
+   # 忽略这些文件扩展名或目录
+   exclude_dir = ["assets", "tmp", "vendor", "frontend/node_modules"]
+   # 监听以下指定目录的文件
+   include_dir = []
+   # 排除以下文件
+   exclude_file = []
+   # 如果文件更改过于频繁，则没有必要在每次更改时都触发构建。可以设置触发构建的延迟时间
+   delay = 1000 # ms
+   # 发生构建错误时，停止运行旧的二进制文件。
+   stop_on_error = true
+   # air的日志文件名，该日志文件放置在你的`tmp_dir`中
+   log = "air_errors.log"
+   
+   [log]
+   # 显示日志时间
+   time = true
+   
+   [color]
+   # 自定义每个部分显示的颜色。如果找不到颜色，使用原始的应用程序日志。
+   main = "magenta"
+   watcher = "cyan"
+   build = "yellow"
+   runner = "green"
+   
+   [misc]
+   # 退出时删除tmp目录
+   clean_on_exit = true
+   ```
+
+   请根据你的项目结构和需求调整上述配置。
+
+3. **运行 `air` 工具**：在终端中切换到你的项目目录，并运行以下命令启动 `air` 工具：
+
+   ```bash
+   air
+   ```
+
+   `air` 将监控你在配置文件中指定的文件和目录，并在文件变化时自动重新构建和运行你的应用程序。
+
+4. **编写 Go 代码**：编写你的 Go 应用程序代码，确保代码在重新构建后能够正确运行。
+
+5. **进行实时热重载**：当你修改代码文件时，`air` 将自动检测到变化并触发重新构建和重启你的应用程序。你可以在终端中看到构建和重启的日志输出。
+
+请注意，`air` 是一个强大的工具，能够提供实时热重载的便利，但在生产环境中不应该使用它。在生产环境中，应该使用编译后的二进制文件运行你的应用程序，以确保稳定性和性能。 `air` 主要用于开发和调试阶段，以提高开发效率。
+
+## 内存对齐
+
+2023.10.01
+
+### 介绍
+
+参考：[【Golang】这个内存对齐呀！？](https://www.bilibili.com/video/BV1Ja4y1i7AF)
+
+Go语言中的内存对齐是一种用于优化内存访问和提高性能的技术。内存对齐是计算机体系结构中的一个重要概念，它确保数据结构中的字段在内存中按照一定的规则排列，以便CPU能够更有效地访问这些数据。在Go中，内存对齐通常是由编译器和运行时系统来处理的，而不需要手动控制。以下是关于Go语言中内存对齐的一些详细信息：
+
+1. 原始数据类型的内存对齐：
+   - 在Go语言中，**原始数据类型（如int、float、bool等）的内存对齐通常按照它们的大小进行，例如int32会按照4字节对齐，int64会按照8字节对齐**。这意味着它们将始终从内存的4字节或8字节边界开始存储。
+
+2. 结构体的内存对齐：
+   - 在Go语言中，结构体的字段也会根据其大小进行内存对齐。通常，**结构体字段的对齐方式是根据字段中最大的对齐值来确定的**。例如，如果一个结构体有一个int32（对齐4字节）和一个float64（对齐8字节）字段，那么它的对齐方式将按照8字节对齐，以适应float64的大小。
+
+3. 对齐规则：
+   - Go语言的内存对齐规则通常是平台相关的，因为不同的操作系统和体系结构可能有不同的要求。编译器和运行时系统会根据目标平台的要求来确定数据结构的内存布局和对齐方式。
+
+4. 结构体字段的对齐控制：
+   - 在Go语言中，可以使用`struct`标签来控制结构体字段的对齐方式。例如，可以使用`struct`标签中的`align`选项来指定字段的对齐方式，但这通常不是必要的，除非你有特定的对齐需求。
+
+5. 内存对齐的性能影响：
+   - 内存对齐可以提高内存访问的性能，因为它允许CPU更有效地加载和存储数据。不正确的内存对齐可能会导致性能下降，因为它会增加数据访问的开销。
+
+总之，Go语言中的内存对齐是一个重要的底层概念，但通常不需要手动干预。Go的编译器和运行时系统会负责处理内存对齐，以确保代码在不同平台上具有良好的性能和可移植性。如果你对特定平台的内存布局有特殊要求，可以考虑使用`struct`标签来控制对齐方式，但大多数情况下，Go会自动处理这些细节。
+
+### 结构体中的使用
+
+结构体中可以利用内存对齐，来减少空间的占用。
+
+1.**将字段按照大小顺序排列**：将结构体字段按照它们的大小进行排序，这可以减少内存浪费。较小的字段放在前面，较大的字段放在后面。
+
+```go
+goCopy codetype MyStruct struct {
+    Field1 int32
+    Field2 float64
+    Field3 string
+}
+```
+
+2.**使用`struct`标签来调整字段对齐**：虽然Go不提供直接的字段顺序控制，但你可以使用`struct`标签来调整字段的对齐方式，例如，使用`align`选项来指定对齐方式。
+
+```go
+goCopy codetype MyStruct struct {
+    Field1 int32  `struct:"align:4"`
+    Field2 float64
+    Field3 string
+}
+```
+
+请注意，尽管你可以使用上述方法来尝试优化内存布局，但在大多数情况下，Go的编译器和运行时系统已经足够智能，能够自动执行内存对齐和布局的优化。因此，通常情况下不需要手动控制内存对齐，而应该专注于编写可读性和维护性更好的代码，让Go编译器来处理底层的内存管理细节。
+
+### 示例
+
+```go
+type MyStruct1 struct {
+    a int8
+    b string // 占用16字节
+    c int8
+}
+
+type MyStruct2 struct {
+    a int8
+    c int8
+    b string // 占用16字节
+}
+
+func main() {
+    s11 := MyStruct1{
+       a: 1,
+       b: "hello",
+       c: 1,
+    }
+
+    s21 := MyStruct2{
+       a: 1,
+       b: "hello",
+       c: 1,
+    }
+
+    fmt.Println(unsafe.Sizeof(s11)) // 32
+    fmt.Println(unsafe.Sizeof(s21)) // 24
+}
+```
+
+在示例中，`MyStruct1` 结构体的字段顺序是 `a int8`, `b string`, `c int8`。对于大多数的平台，`int8` 的大小是1字节，而 `string` 类型包括一个指向底层数据的指针和一个长度字段，大小为16字节（64位系统）。
+
+> 在大多数64位系统上，`string` 的内存对齐通常是8字节，因为这些系统的指针大小通常是8字节。在32位系统上，`string` 的内存对齐通常是4字节，因为32位系统的指针大小通常是4字节。
+> 可以使用`unsafe.Sizeof()`来查看变量内存占用情况，使用`unsafe.Alignof()`来查看变量的内存对齐情况。
+>
+> ```go
+> var s string
+> size := unsafe.Sizeof(s)  // 16
+> align := unsafe.Alignof(s)  // 8
+> ```
+
+首先，让我们计算每个字段的大小：
+
+1. `a int8`：1字节
+2. `b string`：通常8字节（指针） + 8字节（长度） = 16字节
+3. `c int8`：1字节
+
+然后，考虑内存对齐的要求。在大多数平台上，内存对齐要求是按照字段的大小将其对齐到某个倍数。通常，`int8` 对齐到1字节，`string` 在64位系统上对齐到8字节。
+
+现在，让我们计算 `MyStruct1` 结构体的总大小：
+
+1. `a` 需要1字节。
+2. `b` 需要16字节。
+3. `c` 需要1字节。
+
+但由于`string`会对齐到8字节，所以变量`a`之后会空出7字节的内存，然后才能存放变量`b`。
+
+现在，将这些字段的大小相加：8 + 16 + 1 = 25 字节。但是，由于内存对齐的要求，Go 编译器会将结构体的大小舍入到最接近的8字节（因为结构体中字段中最大对齐值为8）的倍数。所以，`MyStruct1` 结构体的实际大小是32字节，而不是25字节。
+
+因此，`MyStruct1` 结构体的占用内存为**32字节**。
+
+`MyStruct2` 结构体的字段顺序是 `a int8`, `c int8`, `b string`。
+内存占用情况：变量`a`和变量`c`分别占用1个字节（共2字节），变量`b`内存对齐到8字节，因此变量`c`后面会空出6个字节的内存，然后才能存放变量`b`。
+因此，`MyStruct1` 结构体的占用内存为：**8+16=24 字节**。（已满足结构体的内存对齐值8）
+
+## JSON解析之数字精度
+
+2023.10.03
+
+参考：[JSON实战拾遗之数字精度](https://www.ituring.com.cn/article/506822)
+
+在我们使用雪花算法生成id时，通常会生成类型为int64的id，但是前端在处理数据时，大概率会使用JavaScript来进行处理。
+Go语言中int64的表示范围：-2^62 --- 2^62(包含边界)
+但是JS中整数类型的范围为： -2^53 --- 2^53(包含边界)。
+
+在传给前端的时候，如何保证不出现数据越界的问题呢？
+
+解决方法：**转换为字符串进行传递**。具体如下：
+
+- 在把后端的数据（struct、map等）转换为Json格式的字符串（序列化）的时候，把可能越界的字段转换为string类型；
+- 在后端反序列化前端传过来的数据时，在把该字段转换为int64之后，然后再反序列化。
+
+实际操作：只需要在json的tag中加上“string”即可。如：
+
+```go
+type Data struct {
+    ID int64 `json:"id,string"` // 在json标签中加入string即可
+}
+```
+
+## Swagger
+
+### 介绍
+
+要在 Go 语言中使用 Gin 和 Swagger 来生成 API 文档，你可以使用 `swaggo/gin-swagger` 包结合注释和代码生成工具 `swag` 来完成。以下是详细的步骤：
+
+1. 安装 `swag` 工具：
+   
+   使用以下命令来安装 `swag` 工具：
+
+   ```
+   go get -u github.com/swaggo/swag/cmd/swag
+   ```
+
+2. 在你的项目中使用注释来描述 API：
+
+   在你的 Gin 路由处理函数和结构体上使用注释来描述 API。例如：
+
+   ```go
+   // @Summary 获取用户信息
+   // @Description 获取特定用户的详细信息
+   // @Produce json
+   // @Param id path int true "用户ID"
+   // @Success 200 {object} UserResponse
+   // @Failure 400 {object} ErrorResponse
+   // @Router /user/{id} [get]
+   func GetUser(c *gin.Context) {
+       // 处理获取用户信息的逻辑
+   }
+   ```
+
+   在上面的例子中，我们使用了注释来描述一个获取用户信息的 API。
+
+3. 使用 `swag` 生成文档：
+
+   在项目的根目录下执行以下命令来生成 Swagger 文档：
+
+   ```
+   swag init
+   ```
+
+   这将会在项目的根目录下生成一个 `docs` 文件夹，并在其中生成 Swagger 文档的相关文件。
+
+4. 配置 Gin 来提供 Swagger UI：
+
+   在你的 Gin 项目中，你需要配置路由来提供 Swagger UI。通常，你可以在路由中添加以下代码：
+
+   ```go
+   package main
+   
+   import (
+   	"Gin_Project/src/20_swager/controller"
+   	_ "Gin_Project/src/20_swager/docs" // 千万不要忘了导入把你上一步生成的docs
+   	"github.com/gin-gonic/gin"
+   	swaggerFiles "github.com/swaggo/files"
+   	ginSwagger "github.com/swaggo/gin-swagger"
+   )
+   
+   
+   func main() {
+   	r := gin.Default()
+   
+   	v1 := r.Group("/api/v1")
+   	{
+   		v1.GET("/ping", controller.PingHandler)
+   		v1.POST("/login", controller.LoginHandler)
+   		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+   	}
+   
+   	r.Run()
+   }
+   
+   ```
+
+   这将创建一个路由，通过访问 "/swagger/index.html" 来打开 Swagger UI，从而查看生成的 API 文档。
+
+5. 启动 Gin 服务器：
+
+   最后，通过调用 `setupRouter()` 函数来创建路由，并启动 Gin 服务器：
+
+   ```go
+   func main() {
+       r := setupRouter()
+       r.Run(":8080")
+   }
+   ```
+
+   现在，你的 Gin 服务器应该在端口 8080 上运行，并且可以通过访问 "/swagger/index.html" 来查看生成的 API 文档。
+
+这就是在 Go 语言中使用 Gin 和 Swagger 来生成 API 文档的基本步骤。通过合理使用注释和 `swag` 工具，你可以自动生成清晰的 API 文档，以便开发人员和团队成员查看和理解你的 API。
+
+`gin-swagger`同时还提供了`DisablingWrapHandler`函数，方便我们通过设置某些环境变量来禁用Swagger。例如：
+
+```go
+r.GET("/swagger/*any", gs.DisablingWrapHandler(swaggerFiles.Handler, "NAME_OF_ENV_VARIABLE"))
+```
+
+此时如果将环境变量`NAME_OF_ENV_VARIABLE`设置为任意值，则`/swagger/*any`将返回404响应，就像未指定路由时一样。
+
+### 官方文档
+
+GitHub：https://github.com/swaggo/gin-swagger
+
+说明文档：https://github.com/swaggo/swag/blob/master/README_zh-CN.md
+
+用法示例：https://github.com/swaggo/swag/blob/master/example/celler/main.go
+
+## 限流策略
+
+限流又称为流量控制（流控），通常是指限制到达系统的并发请求数。
+
+我们生活中也会经常遇到限流的场景，比如：某景区限制每日进入景区的游客数量为8万人；沙河地铁站早高峰通过站外排队逐一放行的方式限制同一时间进入车站的旅客数量等。
+
+限流虽然会影响部分用户的使用体验，但是却能在一定程度上报障系统的稳定性，不至于崩溃（大家都没了用户体验）。
+
+而互联网上类似需要限流的业务场景也有很多，比如电商系统的秒杀、微博上突发热点新闻、双十一购物节、12306抢票等等。这些场景下的用户请求量通常会激增，远远超过平时正常的请求量，此时如果不加任何限制很容易就会将后端服务打垮，影响服务的稳定性。
+
+此外，一些厂商公开的API服务通常也会限制用户的请求次数，比如百度地图开放平台等会根据用户的付费情况来限制用户的请求数等。![百度地图开放平台API调用策略](Gin框架学习笔记.assets/baidumap_ratelimit.jpg)
+
+### 常用的限流策略
+
+#### 漏桶
+
+漏桶法限流很好理解，假设我们有一个水桶按固定的速率向下方滴落一滴水，无论有多少请求，请求的速率有多大，都按照固定的速率流出，对应到系统中就是按照固定的速率处理请求。
+
+<img src="Gin框架学习笔记.assets/loutong.jpg" alt="漏桶算法原理" style="zoom: 33%;" />
+
+漏桶法的关键点在于漏桶始终按照固定的速率运行，但是它并不能很好的处理有大量突发请求的场景，毕竟在某些场景下我们可能需要提高系统的处理效率，而不是一味的按照固定速率处理请求。
+
+关于漏桶的实现，uber团队有一个开源的[github.com/uber-go/ratelimit](https://github.com/uber-go/ratelimit)库。 这个库的使用方法比较简单，`Take()` 方法会返回漏桶下一次滴水的时间。
+
+```go
+import (
+	"fmt"
+	"time"
+
+	"go.uber.org/ratelimit"
+)
+
+func main() {
+    rl := ratelimit.New(100) // per second
+
+    prev := time.Now()
+    for i := 0; i < 10; i++ {
+        now := rl.Take()
+        fmt.Println(i, now.Sub(prev))
+        prev = now
+    }
+
+    // Output:
+    // 0 0
+    // 1 10ms
+    // 2 10ms
+    // 3 10ms
+    // 4 10ms
+    // 5 10ms
+    // 6 10ms
+    // 7 10ms
+    // 8 10ms
+    // 9 10ms
+}
+```
+
+它的源码实现也比较简单，这里大致说一下关键的地方，有兴趣的同学可以自己去看一下完整的源码。
+
+限制器是一个接口类型，其要求实现一个`Take()`方法：
+
+```go
+type Limiter interface {
+	// Take方法应该阻塞已确保满足 RPS
+	Take() time.Time
+}
+```
+
+实现限制器接口的结构体定义如下，这里可以重点留意下`maxSlack`字段，它在后面的`Take()`方法中的处理。
+
+```go
+type limiter struct {
+	sync.Mutex                // 锁
+	last       time.Time      // 上一次的时刻
+	sleepFor   time.Duration  // 需要等待的时间
+	perRequest time.Duration  // 每次的时间间隔
+	maxSlack   time.Duration  // 最大的富余量
+	clock      Clock          // 时钟
+}
+```
+
+`limiter`结构体实现`Limiter`接口的`Take()`方法内容如下：
+
+```go
+// Take 会阻塞确保两次请求之间的时间走完
+// Take 调用平均数为 time.Second/rate.
+func (t *limiter) Take() time.Time {
+	t.Lock()
+	defer t.Unlock()
+
+	now := t.clock.Now()
+
+	// 如果是第一次请求就直接放行
+	if t.last.IsZero() {
+		t.last = now
+		return t.last
+	}
+
+	// sleepFor 根据 perRequest 和上一次请求的时刻计算应该sleep的时间
+	// 由于每次请求间隔的时间可能会超过perRequest, 所以这个数字可能为负数，并在多个请求之间累加
+	t.sleepFor += t.perRequest - now.Sub(t.last)
+
+	// 我们不应该让sleepFor负的太多，因为这意味着一个服务在短时间内慢了很多随后会得到更高的RPS。
+	if t.sleepFor < t.maxSlack {
+		t.sleepFor = t.maxSlack
+	}
+
+	// 如果 sleepFor 是正值那么就 sleep
+	if t.sleepFor > 0 {
+		t.clock.Sleep(t.sleepFor)
+		t.last = now.Add(t.sleepFor)
+		t.sleepFor = 0
+	} else {
+		t.last = now
+	}
+
+	return t.last
+}
+```
+
+上面的代码根据记录每次请求的间隔时间和上一次请求的时刻来计算当次请求需要阻塞的时间——`sleepFor`，这里需要留意的是`sleepFor`的值可能为负，在经过间隔时间长的两次访问之后会导致随后大量的请求被放行，所以代码中针对这个场景有专门的优化处理。创建限制器的`New()`函数中会为`maxSlack`设置初始值，也可以通过`WithoutSlack`这个Option取消这个默认值。
+
+```go
+func New(rate int, opts ...Option) Limiter {
+	l := &limiter{
+		perRequest: time.Second / time.Duration(rate),
+		maxSlack:   -10 * time.Second / time.Duration(rate),
+	}
+	for _, opt := range opts {
+		opt(l)
+	}
+	if l.clock == nil {
+		l.clock = clock.New()
+	}
+	return l
+}
+```
+
+#### 令牌桶
+
+令牌桶其实和漏桶的原理类似，令牌桶按固定的速率往桶里放入令牌，并且只要能从桶里取出令牌就能通过，令牌桶支持突发流量的快速处理。
+
+<img src="Gin框架学习笔记.assets/lingpaitong.jpg" alt="令牌桶原理" style="zoom:33%;" />
+
+对于从桶里取不到令牌的场景，我们可以选择等待也可以直接拒绝并返回。
+
+对于令牌桶的Go语言实现，大家可以参照[github.com/juju/ratelimit](https://github.com/juju/ratelimit)库。这个库支持多种令牌桶模式，并且使用起来也比较简单。
+
+创建令牌桶的方法：
+
+```go
+// 创建指定填充速率和容量大小的令牌桶
+func NewBucket(fillInterval time.Duration, capacity int64) *Bucket
+// 创建指定填充速率、容量大小和每次填充的令牌数的令牌桶
+func NewBucketWithQuantum(fillInterval time.Duration, capacity, quantum int64) *Bucket
+// 创建填充速度为指定速率和容量大小的令牌桶
+// NewBucketWithRate(0.1, 200) 表示每秒填充20个令牌
+func NewBucketWithRate(rate float64, capacity int64) *Bucket
+```
+
+取出令牌的方法如下：
+
+```go
+// 取token（非阻塞）
+func (tb *Bucket) Take(count int64) time.Duration
+func (tb *Bucket) TakeAvailable(count int64) int64
+
+// 最多等maxWait时间取token
+func (tb *Bucket) TakeMaxDuration(count int64, maxWait time.Duration) (time.Duration, bool)
+
+// 取token（阻塞）
+func (tb *Bucket) Wait(count int64)
+func (tb *Bucket) WaitMaxDuration(count int64, maxWait time.Duration) bool
+```
+
+虽说是令牌桶，但是我们没有必要真的去生成令牌放到桶里，我们只需要每次来取令牌的时候计算一下，当前是否有足够的令牌就可以了，具体的计算方式可以总结为下面的公式：
+
+```bash
+当前令牌数 = 上一次剩余的令牌数 + (本次取令牌的时刻-上一次取令牌的时刻)/放置令牌的时间间隔 * 每次放置的令牌数
+```
+
+[github.com/juju/ratelimit](https://github.com/juju/ratelimit)这个库中关于令牌数计算的源代码如下：
+
+```go
+func (tb *Bucket) currentTick(now time.Time) int64 {
+	return int64(now.Sub(tb.startTime) / tb.fillInterval)
+}
+func (tb *Bucket) adjustavailableTokens(tick int64) {
+	if tb.availableTokens >= tb.capacity {
+		return
+	}
+	tb.availableTokens += (tick - tb.latestTick) * tb.quantum
+	if tb.availableTokens > tb.capacity {
+		tb.availableTokens = tb.capacity
+	}
+	tb.latestTick = tick
+	return
+}
+```
+
+获取令牌的`TakeAvailable()`函数关键部分的源代码如下：
+
+```go
+func (tb *Bucket) takeAvailable(now time.Time, count int64) int64 {
+	if count <= 0 {
+		return 0
+	}
+	tb.adjustavailableTokens(tb.currentTick(now))
+	if tb.availableTokens <= 0 {
+		return 0
+	}
+	if count > tb.availableTokens {
+		count = tb.availableTokens
+	}
+	tb.availableTokens -= count
+	return count
+}
+```
+
+大家从代码中也可以看到其实令牌桶的实现并没有很复杂。
+
+### gin中使用限流中间件
+
+在gin框架构建的项目中，我们可以将限流组件定义成中间件。
+
+这里使用令牌桶作为限流策略，编写一个限流中间件如下：
+
+```go
+func RateLimitMiddleware(fillInterval time.Duration, cap int64) func(c *gin.Context) {
+	bucket := ratelimit.NewBucket(fillInterval, cap)
+	return func(c *gin.Context) {
+		// 如果取不到令牌就中断本次请求返回 rate limit...
+		if bucket.TakeAvailable(1) < 1 {
+			c.String(http.StatusOK, "rate limit...")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+```
+
+对于该限流中间件的注册位置，我们可以按照不同的限流策略将其注册到不同的位置，例如：
+
+1. 如果要对全站限流就可以注册成全局的中间件。
+2. 如果是某一组路由需要限流，那么就只需将该限流中间件注册到对应的路由组即可。
+
