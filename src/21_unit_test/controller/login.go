@@ -1,0 +1,43 @@
+package controller
+
+import (
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"net/http"
+)
+
+/**
+* Description:
+* @Author Hollis
+* @Create 2023/10/3 11:27
+ */
+
+type ParamLogin struct {
+	UserName string `json:"username,omitempty" binding:"required"`
+	Password string `json:"password,omitempty" binding:"required"`
+}
+
+// LoginHandler 用户登录
+func LoginHandler(c *gin.Context) {
+	p := new(ParamLogin)
+
+	err := c.ShouldBindJSON(p)
+	if err != nil {
+		fmt.Printf("ShouldBindQuery err:%v\n", err)
+		c.JSON(http.StatusOK, gin.H{
+			"err": err.Error(),
+		})
+		return
+	}
+	if p.UserName == "test" && p.Password == "123456" {
+		c.JSON(http.StatusOK, _ResponseData{
+			Code: 200,
+			Msg:  "login successful!",
+		})
+	} else {
+		c.JSON(http.StatusOK, _ResponseData{
+			Code: 401,
+			Msg:  "wrong user name or password!",
+		})
+	}
+}
